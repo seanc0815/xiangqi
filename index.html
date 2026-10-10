@@ -49,18 +49,20 @@
     box-shadow: 0 1px 0 rgba(0,0,0,.08), 0 10px 28px -14px rgba(0,0,0,.45); }
   .stage { position: relative; }
   .fx { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
-  .stamp { display: grid; justify-items: center; gap: 4px; padding: 14px 26px 12px; border-radius: 14px;
-    background: var(--red-side); color: #fff6ea; transform: rotate(-6deg);
-    box-shadow: 0 0 0 4px #fff6ea inset, 0 0 0 7px var(--red-side) inset, 0 14px 30px -10px rgba(0,0,0,.55);
+  /* 2026-10-10：印章不用網路字型（iPad Safari 等字型時會把字藏起來）、不要紅底 —— 系統粗體大字 + 米白描邊 + 陰影 */
+  .stamp { display: grid; justify-items: center; gap: 6px; transform: rotate(-6deg); color: var(--red-side);
     animation: stampIn .42s cubic-bezier(.2,.9,.3,1.25) both; }
-  .stamp .big { font-family: var(--f-display); font-size: clamp(52px, 14vw, 92px); line-height: 1; letter-spacing: .08em; }
-  .stamp .small { font-family: var(--f-body); font-weight: 700; font-size: 15px; letter-spacing: .12em; opacity: .95; }
+  .stamp .big { font-family: "PingFang TC", "Heiti TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif; font-weight: 900;
+    font-size: clamp(64px, 17vw, 112px); line-height: 1; letter-spacing: .1em;
+    text-shadow: 3px 0 0 #fff6ea, -3px 0 0 #fff6ea, 0 3px 0 #fff6ea, 0 -3px 0 #fff6ea,
+                 2px 2px 0 #fff6ea, -2px 2px 0 #fff6ea, 2px -2px 0 #fff6ea, -2px -2px 0 #fff6ea,
+                 0 8px 18px rgba(0, 0, 0, .55); }
+  .stamp .small { font-family: "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif; font-weight: 700; font-size: 16px;
+    letter-spacing: .12em; color: #fff6ea; background: rgba(27, 29, 28, .8); padding: 3px 14px; border-radius: 999px; }
   .stamp.check { animation: stampIn .42s cubic-bezier(.2,.9,.3,1.25) both, fadeAway .4s ease-in 1.15s forwards; }
-  .stamp.nofont .big { font-family: "PingFang TC", "Heiti TC", "Noto Sans TC", sans-serif; font-weight: 900; letter-spacing: .12em; }
   .prewarm { position: absolute; left: -9999px; top: 0; font-family: var(--f-display); font-size: 40px; opacity: 0; pointer-events: none; }
-  .stamp.mate { padding: 18px 34px 14px; }
-  .stamp.mate .big { font-size: clamp(64px, 18vw, 120px); }
-  .stamp.stale { background: var(--black-side); box-shadow: 0 0 0 4px #fff6ea inset, 0 0 0 7px var(--black-side) inset, 0 14px 30px -10px rgba(0,0,0,.55); }
+  .stamp.mate .big { font-size: clamp(84px, 23vw, 150px); }
+  .stamp.stale .big { color: var(--black-side); }
   @keyframes stampIn { 0% { opacity: 0; transform: scale(2.3) rotate(-16deg); } 60% { opacity: 1; transform: scale(.93) rotate(-5deg); }
     80% { transform: scale(1.04) rotate(-6deg); } 100% { opacity: 1; transform: scale(1) rotate(-6deg); } }
   @keyframes fadeAway { to { opacity: 0; transform: scale(1.06) rotate(-6deg); } }
@@ -660,10 +662,6 @@ function stamp(kind, sub) {
   box.innerHTML = "";
   const d = document.createElement("div");
   d.className = "stamp " + kind;
-  //  2026-10-09 iPad：毛筆字型還沒載完時 Safari 會把字藏起來，1.5 秒的「將軍」章只剩紅框 → 沒載好就用系統粗體字
-  let ready = false;
-  try { ready = !!(document.fonts && document.fonts.check('40px "Ma Shan Zheng"', "將軍絕殺困斃")); } catch (e) { }
-  if (!ready) d.classList.add("nofont");
   const big = document.createElement("span");
   big.className = "big";
   big.textContent = kind === "check" ? "將軍" : kind === "mate" ? "絕殺" : "困斃";
