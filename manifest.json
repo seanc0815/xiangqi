@@ -1,0 +1,16 @@
+{
+  "name": "楚河漢界",
+  "short_name": "象棋",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#131917",
+  "theme_color": "#131917",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
