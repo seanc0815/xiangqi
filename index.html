@@ -211,6 +211,8 @@
       <button class="btn" id="btnUndo">悔棋</button>
       <button class="btn" id="btnHint">提示</button>
       <button class="btn" id="btnFlip">翻轉</button>
+      <button class="btn" id="btnDraw">求和</button>
+      <button class="btn" id="btnGiveUp">認輸</button>
     </div>
     <div class="confirm" id="confirm" hidden>
       <span id="confirmText">放棄這盤、重新開始？</span>
@@ -359,7 +361,7 @@ function ENGINE() {
     return ms.map(m => [sc(m), m]).sort((x, y) => y[0] - x[0]).map(x => x[1]);
   }
 
-  function search(board, red, maxDepth, timeMs, noise) {
+  function search(board, red, maxDepth, timeMs, noise, banned) {
     const b = board.slice(), t0 = Date.now();
     let nodes = 0, stop = false;
     function quiesce(alpha, beta, side, qd) {
@@ -396,7 +398,8 @@ function ENGINE() {
       }
       return any ? best : -MATE + ply;            // 沒棋可走（被將死或困斃）就是輸
     }
-    let root = order(b, legal(b, red)), bestMove = root[0], bestScore = 0, done = 0;
+    const all = legal(b, red), allowed = banned && banned.length ? all.filter(m => !banned.includes(m)) : all;   // 長將禁著不列入
+    let root = order(b, allowed.length ? allowed : all), bestMove = root[0], bestScore = 0, done = 0;
     for (let d = 1; d <= maxDepth && !stop; d++) {
       let alpha = -Infinity, cur = null, curScore = -Infinity;
       const scored = [];
@@ -417,7 +420,7 @@ function ENGINE() {
     return { move: bestMove, score: bestScore, depth: done, nodes, ms: Date.now() - t0 };
   }
 
-  return { START, parse, isRed, gen, legal, inCheck, make, unmake, search };
+  return { START, parse, isRed, gen, legal, inCheck, make, unmake, search, attacked, VAL };
 }
 
 /* ───────────────────────── 畫面 ───────────────────────── */
@@ -445,16 +448,70 @@ const faceOn = () => S.mode === "local" && S.face !== false;
 const topIsRed = () => S.flipped;
 
 function replay(moves) {
-  const b = E.parse(E.START), hist = [];
+  const b = E.parse(E.START), hist = [], keys = [posKey(b, true)];
   let red = true;
   for (const m of moves) {
     if (!E.legal(b.slice(), red).includes(m)) throw new Error("illegal");
-    const note = notation(b, m), cap = E.make(b, m);
-    hist.push({ m, cap, note, red });
+    const before = b.slice(), note = notation(b, m), cap = E.make(b, m);
+    hist.push({ m, cap, note, red, sev: severity(before, b, red) });
     red = !red;
+    keys.push(posKey(b, red));
   }
-  return { b, hist, red };
+  return { b, hist, red, keys };
 }
+
+/* ───────── 重複局面：長將、長捉 ─────────
+   keys[i]＝走完 i 步後的局面（含輪到誰），hist[i]＝第 i+1 步；sev：2 將軍、1 捉子、0 閒著。
+   捉：走完這步，下一步能吃掉對方一顆子，而且是這步新造成的威脅；那顆子沒有保護，或比出手的子值錢。
+       將帥、兵卒去捉不算；捉沒過河的兵卒不算。
+   同一局面要第三次出現時，比雙方這一圈裡「最輕的一步」：比較重的那方（長將＞長捉＞閒著）那一步禁止，要變招；
+   一樣重 → 和棋（不變作和）。 */
+function posKey(b, red) { return b.join("") + (red ? "r" : "b"); }
+function crossed(p, i) { const r = (i / 9) | 0; return E.isRed(p) ? r <= 4 : r >= 5; }
+function threats(b, side) {
+  const out = new Set();
+  for (const c of E.gen(b, side, true)) {
+    const f = (c / 100) | 0, t = c % 100, a = b[f].toLowerCase(), v = b[t].toLowerCase();
+    if (a === "k" || a === "p" || v === "k") continue;
+    if (v === "p" && !crossed(b[t], t)) continue;
+    const cap = E.make(b, c);
+    const ok = !E.inCheck(b, side);
+    const guarded = ok && E.attacked(b, t, !side);
+    E.unmake(b, c, cap);
+    if (ok && (!guarded || E.VAL[v] > E.VAL[a])) out.add(t);
+  }
+  return out;
+}
+function severity(before, after, side) {
+  if (E.inCheck(after, !side)) return 2;
+  const now = threats(after, side);
+  if (!now.size) return 0;
+  const was = threats(before.slice(), side);
+  for (const t of now) if (!was.has(t)) return 1;
+  return 0;
+}
+function minSev(seg, red) { const s = seg.filter(h => h.red === red); return s.length ? Math.min(...s.map(h => h.sev)) : 0; }
+function occurrences(key) { const occ = []; G.keys.forEach((k, i) => { if (k === key) occ.push(i); }); return occ; }
+/* 這一步會不會犯「長將／長捉」：會就回傳名稱，不會回傳 null */
+function forbidden(m) {
+  const b = G.b.slice(); E.make(b, m);
+  const occ = occurrences(posKey(b, !G.red));
+  if (occ.length < 2) return null;
+  const sev = severity(G.b, b, G.red);
+  if (!sev) return null;
+  const seg = G.hist.slice(occ[0]).concat([{ red: G.red, sev }]);
+  const mine = minSev(seg, G.red), theirs = minSev(seg, !G.red);
+  return mine > theirs ? (mine === 2 ? "長將" : "長捉") : null;
+}
+function bannedMoves() { return E.legal(G.b.slice(), G.red).filter(m => forbidden(m)); }
+function repetitionDraw() {
+  const occ = occurrences(G.keys[G.keys.length - 1]);
+  if (occ.length < 3) return false;
+  const seg = G.hist.slice(occ[0]);
+  return minSev(seg, true) === minSev(seg, false);
+}
+function quietPlies() { let n = 0; for (let i = G.hist.length - 1; i >= 0 && G.hist[i].cap === "."; i--) n++; return n; }
+const noAttackers = () => !G.b.some(p => "RNCPrncp".includes(p));
 
 function notation(b, m) {
   const f = (m / 100) | 0, t = m % 100, p = b[f], red = E.isRed(p), T = p.toUpperCase();
@@ -572,11 +629,23 @@ function drawPieces(landed) {
 }
 
 /* ───────── 局面判斷 ───────── */
+let overMemo = { key: null, val: null };
 function gameOver() {
   if (S.result) return S.result;                                   // 連線認輸
+  const key = S.moves.join(",");
+  if (overMemo.key === key) return overMemo.val;
+  let val = null;
   const legalNow = E.legal(G.b.slice(), G.red);
-  if (legalNow.length) return null;
-  return { winRed: !G.red, why: E.inCheck(G.b, G.red) ? "將死" : "困斃（無子可動）" };
+  if (!legalNow.length) val = { winRed: !G.red, kind: E.inCheck(G.b, G.red) ? "mate" : "stale", why: E.inCheck(G.b, G.red) ? "將死" : "困斃（無子可動）" };
+  else if (repetitionDraw()) val = { draw: true, kind: "draw", why: "同一局面重複三次，不變作和" };
+  else if (quietPlies() >= 120) val = { draw: true, kind: "draw", why: "連續 60 回合沒有吃子，判和" };
+  else if (noAttackers()) val = { draw: true, kind: "draw", why: "雙方都沒有能進攻的子，判和" };
+  else {
+    const f = legalNow.map(forbidden);
+    if (f.every(Boolean)) val = { winRed: !G.red, kind: "perp", why: f[0] + "不變，判負" };
+  }
+  overMemo = { key, val };
+  return val;
 }
 function myTurn() {
   if (gameOver() || thinking) return false;
@@ -595,7 +664,10 @@ function renderPanel() {
   $("check").hidden = !check;
   let msg, sub;
   const side = G.red ? "紅方" : "黑方";
-  if (over) {
+  if (over && over.draw) {
+    msg = "和棋";
+    sub = over.why + "。" + (S.mode === "online" ? "按「再來一盤」重新開始。" : "按「新局」再來一盤。");
+  } else if (over) {
     const w = over.winRed ? "紅方" : "黑方";
     msg = `${w}勝`;
     if (S.mode === "ai") msg = over.winRed === S.humanRed ? "你贏了！" : "電腦贏了";
@@ -640,10 +712,15 @@ function renderPanel() {
   $("btnNew").hidden = online;
   $("btnUndo").disabled = thinking || !undoCount();
   $("btnHint").disabled = thinking || !!over || !myTurn();
+  $("btnGiveUp").hidden = online;
+  $("btnGiveUp").disabled = thinking || !!over || !S.moves.length;
+  $("btnDraw").disabled = thinking || !!over || !S.moves.length || (online && (!S.online || !NET.game || !NET.game.red || !NET.game.black));
   renderOnline();
 }
 function lastText(check) {
   if (check) return "被將軍了，必須應將";
+  const q = quietPlies();
+  if (q >= 80) return `已經 ${Math.floor(q / 2)} 回合沒有吃子（60 回合判和）。上一步：${G.hist[G.hist.length - 1].note}`;
   return G.hist.length ? "上一步：" + G.hist[G.hist.length - 1].note : "點一顆" + (G.red ? "紅" : "黑") + "子開始";
 }
 function render(landed) {
@@ -653,27 +730,28 @@ function render(landed) {
 
 /* 將軍／絕殺／困斃：棋盤中央蓋一個印章 */
 function winnerText(over) {
+  if (over.draw) return over.why;
   if (S.mode === "ai") return over.winRed === S.humanRed ? "你贏了" : "電腦贏了";
   if (S.mode === "online" && S.online) return over.winRed === S.online.red ? "你贏了" : "對手贏了";
   return (over.winRed ? "紅方" : "黑方") + "勝";
 }
-function stamp(kind, sub) {
+function stamp(kind, sub, bigText) {
   const box = $("fx");
   box.innerHTML = "";
   const d = document.createElement("div");
-  d.className = "stamp " + kind;
+  d.className = "stamp " + (kind === "draw" ? "stale" : kind === "perp" || kind === "resign" ? "mate" : kind === "warn" ? "check" : kind);
   const big = document.createElement("span");
   big.className = "big";
-  big.textContent = kind === "check" ? "將軍" : kind === "mate" ? "絕殺" : "困斃";
+  big.textContent = bigText || { check: "將軍", mate: "絕殺", stale: "困斃", draw: "和棋", perp: "判負", warn: "長將", resign: "認輸" }[kind];
   d.appendChild(big);
   if (sub) { const s = document.createElement("span"); s.className = "small"; s.textContent = sub; d.appendChild(s); }
   box.appendChild(d);
-  if (kind === "check") setTimeout(() => d.remove(), 1700);
+  if (kind === "check" || kind === "warn") setTimeout(() => d.remove(), 1700);
   else { svg.classList.remove("shake"); void svg.getBoundingClientRect(); svg.classList.add("shake"); }
 }
 function announce() {
   const over = gameOver();
-  if (over && !S.result) stamp(E.inCheck(G.b, G.red) ? "mate" : "stale", winnerText(over));
+  if (over && !S.result) stamp(over.kind || (E.inCheck(G.b, G.red) ? "mate" : "stale"), over.kind === "perp" ? over.why + "・" + winnerText(over) : winnerText(over));
   else if (!over && E.inCheck(G.b, G.red)) stamp("check");
 }
 
@@ -704,8 +782,9 @@ function rebuild(landed) {
 /* 本機下一步 */
 function play(m) {
   S.moves.push(m);
-  const note = notation(G.b, m), red = G.red, cap = E.make(G.b, m);
-  G.hist.push({ m, cap, note, red }); G.red = !G.red;
+  const before = G.b.slice(), note = notation(G.b, m), red = G.red, cap = E.make(G.b, m);
+  G.hist.push({ m, cap, note, red, sev: severity(before, G.b, red) }); G.red = !G.red;
+  G.keys.push(posKey(G.b, G.red));
   sel = -1; targets = []; hint = null;
   render(m % 100); save(); announce();
   if (S.mode === "online") pushOnline({ moves: S.moves.slice() });
@@ -715,7 +794,7 @@ function play(m) {
 /* ───────── 電腦（背景執行緒） ───────── */
 let worker = null;
 try {
-  const src = `const E=(${ENGINE.toString()})();onmessage=e=>{const d=e.data;postMessage({id:d.id,r:E.search(d.board,d.red,d.depth,d.time,d.noise)});};`;
+  const src = `const E=(${ENGINE.toString()})();onmessage=e=>{const d=e.data;postMessage({id:d.id,r:E.search(d.board,d.red,d.depth,d.time,d.noise,d.banned)});};`;
   worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
 } catch (e) { worker = null; }
 const waiting = new Map();
@@ -725,9 +804,9 @@ if (worker) {
 }
 let reqId = 0;
 function think(board, red, lv, cb) {
-  const L = LEVELS[lv], id = ++reqId;
-  if (worker) { waiting.set(id, cb); worker.postMessage({ id, board, red, depth: L.depth, time: L.time, noise: L.noise }); }
-  else setTimeout(() => cb(E.search(board, red, Math.min(L.depth, 3), L.time, L.noise)), 30);
+  const L = LEVELS[lv], id = ++reqId, banned = red === G.red ? bannedMoves() : [];   // 電腦也不走長將、長捉
+  if (worker) { waiting.set(id, cb); worker.postMessage({ id, board, red, depth: L.depth, time: L.time, noise: L.noise, banned }); }
+  else setTimeout(() => cb(E.search(board, red, Math.min(L.depth, 3), L.time, L.noise, banned)), 30);
 }
 function maybeAi() {
   if (S.mode !== "ai" || G.red === S.humanRed || gameOver()) return;
@@ -770,6 +849,13 @@ function watch(code) {
     if (!snap.exists) { NET.game = null; $("roomNote").textContent = "這個房間已不存在。"; renderPanel(); return; }
     const d = snap.data();
     NET.game = d;
+    const off = d.drawOffer;
+    if (off && !d.result && off.red !== S.online.red && off.n === (Array.isArray(d.moves) ? d.moves.length : 0)
+        && NET.offerSeen !== off.n) {
+      NET.offerSeen = off.n;
+      ask("對手提和，接受嗎？", () => pushOnline({ result: DRAW_OK, drawOffer: null }),
+          () => pushOnline({ drawOffer: null }), "接受和棋", "拒絕");
+    }
     const moves = Array.isArray(d.moves) ? d.moves.slice() : [];
     const same = moves.length === S.moves.length && moves.every((m, i) => m === S.moves[i]);
     const prevResult = JSON.stringify(S.result);
@@ -867,7 +953,11 @@ svg.addEventListener("click", evt => {
   if (!myTurn()) return;
   const i = boardIndex(evt); if (i < 0) return;
   const mv = targets.find(m => m % 100 === i);
-  if (mv != null) { play(mv); return; }
+  if (mv != null) {
+    const f = forbidden(mv);
+    if (f) { $("sub").textContent = f + "：這步會第三次重複同一個局面，請變招"; stamp("warn", "請變招", f); return; }
+    play(mv); return;
+  }
   const p = G.b[i];
   if (p !== "." && E.isRed(p) === G.red) {
     sel = sel === i ? -1 : i;
@@ -877,11 +967,54 @@ svg.addEventListener("click", evt => {
 });
 
 /* ───────── 控制列 ───────── */
-function ask(text, apply) {
-  pendingConfirm = apply; $("confirmText").textContent = text; $("confirm").hidden = false;
+let pendingNo = null;
+function ask(text, apply, no, yesLabel, noLabel) {
+  pendingConfirm = apply; pendingNo = no || null;
+  $("confirmText").textContent = text; $("confirm").hidden = false;
+  $("confirmYes").textContent = yesLabel || "確定"; $("confirmNo").textContent = noLabel || "取消";
 }
-$("confirmYes").onclick = () => { $("confirm").hidden = true; const f = pendingConfirm; pendingConfirm = null; if (f) f(); };
-$("confirmNo").onclick = () => { $("confirm").hidden = true; pendingConfirm = null; };
+$("confirmYes").onclick = () => { $("confirm").hidden = true; const f = pendingConfirm; pendingConfirm = pendingNo = null; if (f) f(); };
+$("confirmNo").onclick = () => { $("confirm").hidden = true; const f = pendingNo; pendingConfirm = pendingNo = null; if (f) f(); };
+
+/* 認輸（雙人同機、對電腦；連線用房間裡的認輸） */
+$("btnGiveUp").onclick = () => {
+  if (gameOver() || thinking || !S.moves.length) return;
+  const loserRed = S.mode === "ai" ? S.humanRed : G.red;
+  const who = S.mode === "ai" ? "你" : (loserRed ? "紅方" : "黑方");
+  ask(`確定${who}認輸？`, () => {
+    token++; thinking = false;
+    S.result = { winRed: !loserRed, why: (loserRed ? "紅方" : "黑方") + "認輸" };
+    save(); renderPanel(); stamp("resign", winnerText(S.result));
+  });
+};
+
+/* 求和：電腦看局勢決定；同機問對面；連線送給對手 */
+const DRAW_OK = { draw: true, kind: "draw", why: "雙方同意和棋" };
+$("btnDraw").onclick = () => {
+  if (gameOver() || thinking || !S.moves.length) return;
+  if (S.mode === "ai") {
+    if (S.drawAskedAt === S.moves.length) { $("sub").textContent = "這個局面已經問過了，多走幾步再提和。"; return; }
+    S.drawAskedAt = S.moves.length;
+    $("sub").textContent = "電腦考慮中…";
+    const my = token;
+    think(G.b.slice(), G.red, 1, r => {                          // 從輪到走的那方來評估（誰先走誰占一點便宜）
+      if (my !== token) return;
+      const score = r ? (G.red === S.humanRed ? -r.score : r.score) : 0;   // 換成電腦那方的分數
+      if (score <= 50) { S.result = DRAW_OK; save(); renderPanel(); stamp("draw", "電腦同意和棋"); }
+      else { renderPanel(); $("sub").textContent = "電腦不同意和棋，它覺得自己比較好。"; }
+    });
+    return;
+  }
+  if (S.mode === "local") {
+    ask(`${G.red ? "黑方" : "紅方"}同意和棋嗎？`, () => { S.result = DRAW_OK; save(); renderPanel(); stamp("draw", "雙方同意和棋"); },
+        null, "同意和棋", "不同意");
+    return;
+  }
+  if (S.online && NET.game) {
+    pushOnline({ drawOffer: { red: S.online.red, n: S.moves.length } });
+    $("roomNote").textContent = "已經向對手提和，等對方回覆。";
+  }
+};
 const inProgress = () => S.moves.length > 0 && !gameOver();
 
 function switchMode(mode) {
@@ -915,6 +1048,7 @@ document.querySelectorAll("#lvlSeg button").forEach(b => b.onclick = () => { S.l
 $("btnUndo").onclick = () => {
   const k = undoCount(); if (!k || thinking) return;
   token++;
+  if (S.mode !== "online") S.result = null;
   S.moves.splice(S.moves.length - k, k); save(); rebuild();
   if (S.mode === "online") pushOnline({ moves: S.moves.slice() });
 };
@@ -938,7 +1072,7 @@ $("btnResign").onclick = () => ask("確定認輸？", () => {
   S.result = res; save(); renderPanel(); pushOnline({ result: res });
 });
 $("btnRematch").onclick = () => {
-  const go = () => { S.moves = []; S.result = null; save(); rebuild(); pushOnline({ moves: [], result: null }); };
+  const go = () => { S.moves = []; S.result = null; save(); rebuild(); pushOnline({ moves: [], result: null, drawOffer: null }); };
   if (inProgress()) ask("這盤還沒下完，確定重新開始？（對手的畫面也會清空）", go); else go();
 };
 $("btnCopy").onclick = async () => {
