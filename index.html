@@ -28,6 +28,7 @@
     --wood-a: #d3ad74; --wood-b: #b98a4f; --grid: #4d3216;
     color-scheme: dark;
   }
+  [hidden] { display: none !important; }   /* 2026-10-13：.confirm／.group 的 display 會蓋掉 hidden，確認列一直露出來 */
   html, body { background: var(--ground); color: var(--ink); }
   body { font-family: var(--f-body); font-size: 15px; line-height: 1.55; padding-inline: 16px; padding-block: 18px 28px; }
   .wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 22px;
@@ -36,6 +37,12 @@
   header.top { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
   header.top h1 { font-family: var(--f-display); font-weight: 400; font-size: clamp(34px, 6vw, 46px); line-height: 1; margin: 0; letter-spacing: .06em; }
   header.top p { margin: 0; color: var(--muted); font-size: 13px; }
+  /* 象棋／圍棋切換（2026-10-13）；在 claude.ai 裡沒有圍棋那頁 → 藏起來 */
+  nav.switch { display: flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; margin-left: auto; align-self: center; }
+  nav.switch[hidden] { display: none; }
+  nav.switch a { padding: 5px 16px; color: var(--muted); text-decoration: none; font-size: 14px; }
+  nav.switch a + a { border-left: 1px solid var(--rule); }
+  nav.switch a[aria-current="page"] { background: var(--jade-soft); color: var(--ink); font-weight: 700; }
 
   .boardcol { display: grid; gap: 8px; min-width: 0; }
   .tray { display: flex; align-items: center; gap: 8px; min-height: 30px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
@@ -124,6 +131,7 @@
   <header class="top">
     <h1>楚河漢界</h1>
     <p>中國象棋：兩個人同一個畫面輪流下、各用各的手機連線，或跟電腦下。</p>
+    <nav class="switch" id="switch" aria-label="切換遊戲"><a href="./" aria-current="page">象棋</a><a href="go.html">圍棋</a></nav>
   </header>
 
   <div class="boardcol">
@@ -434,6 +442,7 @@ const $ = id => document.getElementById(id);
 const svg = $("board");
 const NS = "http://www.w3.org/2000/svg";
 const STORE = "xiangqi-v2";
+if (/claude/.test(location.hostname)) $("switch").hidden = true;   // claude.ai 裡沒有圍棋那頁
 
 /* S：要保存的設定與棋局；G：由棋步重建的盤面 */
 let S = null, G = null;

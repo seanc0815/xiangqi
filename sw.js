@@ -1,6 +1,6 @@
 // 離線快取（build_pages.py 產生，不要手改）
-const V = "xiangqi-5ce2a4cdae";
-const CORE = ["./", "index.html", "manifest.json", "icon.png"];
+const V = "xiangqi-c02d459bbc";
+const CORE = ["./", "index.html", "manifest.json", "icon.png", "go.html"];
 const FONT = /^https:\/\/fonts\.(googleapis|gstatic)\.com\//;
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(V).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
