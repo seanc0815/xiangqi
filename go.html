@@ -94,7 +94,7 @@
 <div class="wrap">
   <header class="top">
     <h1>黑白縱橫</h1>
-    <p>圍棋：兩個人同一個畫面輪流下，或跟電腦下。中國規則數子，黑貼 7.5。</p>
+    <p>圍棋：兩個人同一個畫面輪流下，或跟電腦下，可以讓子。中國規則數子，黑貼 7.5（讓子棋貼 0.5）。</p>
     <nav class="switch" id="switch" aria-label="切換遊戲"><a href="./">象棋</a><a href="go.html" aria-current="page">圍棋</a></nav>
   </header>
 
@@ -128,6 +128,9 @@
         <button data-n="13" aria-pressed="false">13 路</button>
         <button data-n="19" aria-pressed="false">19 路</button>
       </div>
+      <span class="label" style="margin-top:6px">讓子</span>
+      <div class="seg" id="hcSeg"></div>
+      <span class="note" id="hcNote">讓子：黑方先在星位擺好，白先下；讓子棋只貼 0.5 目。對電腦時你執黑＝電腦讓你。</span>
     </div>
 
     <div class="group" id="aiOpts" hidden>
@@ -406,7 +409,17 @@ const $ = id => document.getElementById(id);
 const svg = $("board");
 const NS = "http://www.w3.org/2000/svg";
 const STORE = "go-v1";
-const KOMI = 7.5;
+/* 貼目：一般 7.5（中國規則）；讓子棋不貼目，只貼 0.5 避免和棋 */
+const komi = () => (S && S.handicap ? 0.5 : 7.5);
+/* 讓子：黑方先擺在星位，白先下。2 子對角、3 子再加右下、4 子四角、5 子加天元、6 子四角＋左右邊、7 子再加天元、8 子四角＋四邊、9 子全部 */
+function handicapPoints(n, h) {
+  const [lo, mid, hi] = n === 9 ? [2, 4, 6] : n === 13 ? [3, 6, 9] : [3, 9, 15];
+  const TR = [hi, lo], BL = [lo, hi], BR = [hi, hi], TL = [lo, lo], C = [mid, mid], L = [lo, mid], Rr = [hi, mid], T = [mid, lo], B = [mid, hi];
+  const sets = { 2: [TR, BL], 3: [TR, BL, BR], 4: [TR, BL, BR, TL], 5: [TR, BL, BR, TL, C], 6: [TR, BL, BR, TL, L, Rr],
+    7: [TR, BL, BR, TL, L, Rr, C], 8: [TR, BL, BR, TL, L, Rr, T, B], 9: [TR, BL, BR, TL, L, Rr, T, B, C] };
+  return (sets[h] || []).map(([x, y]) => y * n + x);
+}
+const maxHandicap = n => (n === 9 ? 5 : 9);
 const LETTERS = "ABCDEFGHJKLMNOPQRST";
 const LEVELS = [{ time: 400, loose: true }, { time: 1600 }, { time: 4500 }];
 const BIG_TIME = { 9: 1, 13: 1.4, 19: 1.8 };      // 大棋盤多給一點時間
@@ -414,15 +427,17 @@ const BIG_TIME = { 9: 1, 13: 1.4, 19: 1.8 };      // 大棋盤多給一點時間
 let S = null, G = null;
 let thinking = false, token = 0, ghost = -1, hint = null, overlay = null, pendingConfirm = null, scoring = null;
 
-function defaults() { return { n: 9, mode: "local", humanBlack: true, level: 1, two: { 9: false, 13: false, 19: true }, moves: [], over: null }; }
+function defaults() { return { n: 9, mode: "local", humanBlack: true, level: 1, handicap: 0, two: { 9: false, 13: false, 19: true }, moves: [], over: null }; }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { } }
 function label(n, i) { return i < 0 ? "虛手" : LETTERS[i % n] + (n - ((i / n) | 0)); }
 const colName = col => col === 1 ? "黑" : "白";
 
 /* 由棋步重建：盤面、輪到誰、提子數、歷史局面（全局同形） */
 function replay(n, moves) {
-  const b = GE.newBoard(n), keys = new Set([key(b)]), caps = { 1: 0, 2: 0 };
-  let col = 1, passes = 0;
+  const b = GE.newBoard(n), caps = { 1: 0, 2: 0 };
+  for (const i of handicapPoints(n, S.handicap || 0)) b.c[GE.toP(n, i)] = 1;
+  const keys = new Set([key(b)]);
+  let col = S.handicap ? 2 : 1, passes = 0;
   const list = [];
   for (const m of moves) {
     if (m < 0) { b.ko = -1; passes++; }
@@ -478,7 +493,7 @@ if (worker) {
 }
 let reqId = 0;
 function think(time, cb) {
-  const st = { n: G.n, c: cells(G.b), toMove: G.col, ko: G.b.ko >= 0 ? GE.toI(G.n, G.b.ko) : -1, komi: KOMI,
+  const st = { n: G.n, c: cells(G.b), toMove: G.col, ko: G.b.ko >= 0 ? GE.toI(G.n, G.b.ko) : -1, komi: komi(),
     last: S.moves.length && S.moves[S.moves.length - 1] >= 0 ? S.moves[S.moves.length - 1] : -1 };
   const opt = { time, banned: superkoBanned(), seed: (Math.random() * 4294967295) >>> 0 };
   const id = ++reqId;
@@ -486,7 +501,7 @@ function think(time, cb) {
   else setTimeout(() => cb(GE.search(st, { ...opt, time: Math.min(time, 800) })), 30);
 }
 const aiTurn = () => S.mode === "ai" && !S.over && !scoring && (G.col === 1) !== S.humanBlack;
-const estScore = own => own.reduce((a, v) => a + v, 0) - KOMI;      // ＋＝黑領先（含貼目）
+const estScore = own => own.reduce((a, v) => a + v, 0) - komi();      // ＋＝黑領先（含貼目）
 
 function maybeAi() {
   if (!aiTurn()) return;
@@ -547,11 +562,11 @@ function areaScore(dead) {
       for (const r of reg) { terr[r] = o; if (o === 1) bS++; else if (o === 2) wS++; }
     }
   }
-  return { b: bS, w: wS, terr, diff: bS - wS - KOMI };
+  return { b: bS, w: wS, terr, diff: bS - wS - komi() };
 }
 function resultText(sc) {
   const d = Math.abs(sc.diff);
-  return `${sc.diff > 0 ? "黑" : "白"}勝 ${d} 目　（黑 ${sc.b}，白 ${sc.w} + 貼 ${KOMI}）`;
+  return `${sc.diff > 0 ? "黑" : "白"}勝 ${d} 目　（黑 ${sc.b}，白 ${sc.w} + 貼 ${komi()}）`;
 }
 function startScoring() {
   scoring = { dead: new Set(), busy: true };
@@ -668,7 +683,7 @@ function trays() {
   const side = (col, isTop) => {
     let who = colName(col) + "方";
     if (S.mode === "ai") who = ((col === 1) === S.humanBlack ? "你" : "電腦") + `（${colName(col)}）`;
-    return `<span class="dot ${col === 1 ? "b" : "w"}"></span><b>${who}</b><span>${cap(col)}</span>${col === 2 ? `<span>貼目 ${KOMI}</span>` : ""}`;
+    return `<span class="dot ${col === 1 ? "b" : "w"}"></span><b>${who}</b><span>${cap(col)}</span>${col === 2 ? `<span>貼目 ${komi()}</span>${S.handicap ? `<span>讓 ${S.handicap} 子</span>` : ""}` : ""}`;
   };
   const bottom = S.mode === "ai" ? (S.humanBlack ? 1 : 2) : 1;
   $("trayTop").innerHTML = side(3 - bottom, true);
@@ -676,14 +691,24 @@ function trays() {
 }
 function renderMoves() {
   const box = $("moves");
-  if (!S.moves.length) { box.innerHTML = '<div class="empty">還沒有棋步。黑先，常見第一步下在星位（棋盤上的小黑點）。</div>'; return; }
+  if (!S.moves.length) {
+    box.innerHTML = S.handicap ? `<div class="empty">讓 ${S.handicap} 子：黑子已經擺在星位，白先下。</div>`
+      : '<div class="empty">還沒有棋步。黑先，常見第一步下在星位（棋盤上的小黑點）。</div>';
+    return;
+  }
   box.innerHTML = G.list.map((h, k) => `<span class="${k === G.list.length - 1 ? "last" : ""}">${k + 1}. ${colName(h.col)} ${label(G.n, h.m)}</span>`).join("");
   box.scrollTop = box.scrollHeight;
 }
 function render() {
   drawBoard(); trays(); renderMoves();
   const pressed = (sel, attr, val) => document.querySelectorAll(sel + " button").forEach(b => b.setAttribute("aria-pressed", b.dataset[attr] === String(val)));
-  pressed("#modeSeg", "mode", S.mode); pressed("#sizeSeg", "n", S.n);
+  const hcOpts = [0, ...Array.from({ length: maxHandicap(S.n) - 1 }, (_, k) => k + 2)];
+  if ($("hcSeg").dataset.n !== String(S.n)) {
+    $("hcSeg").dataset.n = S.n;
+    $("hcSeg").innerHTML = hcOpts.map(h => `<button data-hc="${h}">${h ? h : "不讓"}</button>`).join("");
+    $("hcSeg").querySelectorAll("button").forEach(b => b.onclick = () => setHandicap(+b.dataset.hc));
+  }
+  pressed("#modeSeg", "mode", S.mode); pressed("#sizeSeg", "n", S.n); pressed("#hcSeg", "hc", S.handicap || 0);
   pressed("#sideSeg", "black", S.humanBlack ? 1 : 0); pressed("#lvlSeg", "lv", S.level); pressed("#tapSeg", "two", S.two[S.n] ? 1 : 0);
   $("aiOpts").hidden = S.mode !== "ai";
   $("turnDot").className = "dot " + (G.col === 1 ? "b" : "w");
@@ -744,7 +769,13 @@ $("confirmNo").onclick = () => { $("confirm").hidden = true; pendingConfirm = nu
 function newGame(n) {
   token++; thinking = false; scoring = null; ghost = -1; hint = null; overlay = null;
   S.n = n || S.n; S.moves = []; S.over = null; $("fx").innerHTML = "";
+  if (S.handicap > maxHandicap(S.n)) S.handicap = maxHandicap(S.n);
   rebuild(); save(); render(); maybeAi();
+}
+function setHandicap(h) {
+  if (h === (S.handicap || 0)) return;
+  const go = () => { S.handicap = h; newGame(); };
+  if (S.moves.length && !S.over) ask(h ? `改成讓 ${h} 子會重新開始，確定？` : "改成不讓子會重新開始，確定？", go); else go();
 }
 $("btnNew").onclick = () => S.moves.length && !S.over ? ask("放棄這盤、重新開始？", () => newGame()) : newGame();
 document.querySelectorAll("#sizeSeg button").forEach(b => b.onclick = () => {
@@ -817,6 +848,7 @@ if (/claude/.test(location.hostname)) $("switch").hidden = true;
   try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { st = null; }
   S = Object.assign(defaults(), st || {});
   if (![9, 13, 19].includes(S.n)) S.n = 9;
+  if (!(S.handicap >= 2 && S.handicap <= maxHandicap(S.n))) S.handicap = 0;
   S.two = Object.assign({ 9: false, 13: false, 19: true }, S.two || {});
   try { rebuild(); } catch (e) { S.moves = []; S.over = null; rebuild(); }
   if (!S.over && G.passes >= 2) startScoring();
