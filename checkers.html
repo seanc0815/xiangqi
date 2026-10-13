@@ -1,0 +1,298 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="棋盤小館"><meta name="theme-color" content="#131917"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon.png"><link rel="icon" href="icon.png"><style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style><script>if('serviceWorker' in navigator&&(location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname)))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))</script><title>跳棋</title>
+<style>
+  :root {
+    --ground: #e7ece4; --panel: #f5f7f2; --ink: #1d2723; --muted: #5d6b64; --rule: #cbd4cb;
+    --jade: #2e7a67; --jade-soft: rgba(46, 122, 103, .16); --accent: #b0261d; --x: #b0261d; --o: #2e5fa8;
+    --f-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #131917; --panel: #1b2320; --ink: #e2e9e4; --muted: #95a59d; --rule: #2b3732;
+      --jade: #5fb59d; --jade-soft: rgba(95, 181, 157, .18); --accent: #e0574b; --x: #e0574b; --o: #6b9be0; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --ground: #131917; --panel: #1b2320; --ink: #e2e9e4; --muted: #95a59d; --rule: #2b3732;
+    --jade: #5fb59d; --jade-soft: rgba(95, 181, 157, .18); --accent: #e0574b; --x: #e0574b; --o: #6b9be0; color-scheme: dark; }
+  [hidden] { display: none !important; }
+  html, body { background: var(--ground); color: var(--ink); }
+  body { font-family: var(--f-body); font-size: 15px; line-height: 1.55; padding-inline: 16px; padding-block: 18px 28px; margin: 0; }
+  .wrap { max-width: 1000px; margin: 0 auto; display: grid; gap: 22px; grid-template-columns: minmax(0, 560px) minmax(0, 340px); justify-content: center; align-items: start; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 560px); } }
+  header.top { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  header.top h1 { font-weight: 900; font-size: clamp(30px, 6vw, 40px); line-height: 1; margin: 0; letter-spacing: .06em; }
+  header.top p { margin: 0; color: var(--muted); font-size: 13px; flex: 1 1 220px; }
+  a.home { margin-left: auto; color: var(--muted); text-decoration: none; font-size: 14px; border: 1px solid var(--rule); border-radius: 999px; padding: 5px 14px; }
+  .stage { position: relative; }
+  svg#board { width: 100%; height: auto; display: block; touch-action: manipulation; user-select: none; -webkit-user-select: none; border-radius: 12px; background: var(--panel); border: 1px solid var(--rule); }
+  .fx { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  .stamp { display: grid; justify-items: center; gap: 6px; transform: rotate(-6deg); color: var(--accent); animation: stampIn .42s cubic-bezier(.2,.9,.3,1.25) both; }
+  .stamp .big { font-family: "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif; font-weight: 900; font-size: clamp(56px, 15vw, 100px); line-height: 1; letter-spacing: .08em;
+    text-shadow: 3px 0 0 #fff6ea, -3px 0 0 #fff6ea, 0 3px 0 #fff6ea, 0 -3px 0 #fff6ea, 0 8px 18px rgba(0,0,0,.45); }
+  .stamp .small { font-weight: 700; font-size: 15px; color: #fff6ea; background: rgba(27, 29, 28, .8); padding: 3px 14px; border-radius: 999px; }
+  @keyframes stampIn { 0% { opacity: 0; transform: scale(2.2) rotate(-16deg); } 60% { opacity: 1; transform: scale(.94) rotate(-5deg); } 100% { opacity: 1; transform: scale(1) rotate(-6deg); } }
+  @media (prefers-reduced-motion: reduce) { .stamp { animation: none; } }
+  aside.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; display: grid; gap: 16px; min-width: 0; }
+  .status .msg { font-weight: 700; font-size: 17px; } .status .sub { color: var(--muted); font-size: 13px; }
+  .group { display: grid; gap: 6px; } .label { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+  .seg { display: flex; border: 1px solid var(--rule); border-radius: 9px; overflow: hidden; }
+  .seg button { flex: 1; background: transparent; border: 0; color: var(--muted); font: inherit; font-size: 14px; padding: 7px 0; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--rule); }
+  .seg button[aria-pressed="true"] { background: var(--jade-soft); color: var(--ink); font-weight: 700; }
+  .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .btn { font: inherit; font-size: 14px; padding: 8px 6px; border-radius: 9px; border: 1px solid var(--rule); background: var(--ground); color: var(--ink); cursor: pointer; }
+  .btn.primary { background: var(--jade); border-color: var(--jade); color: #fff; font-weight: 700; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--jade); outline-offset: 2px; }
+  .confirm { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+  .confirm .btn { font-size: 13px; padding: 4px 10px; }
+  .score { display: flex; gap: 14px; font-size: 14px; color: var(--muted); } .score b { color: var(--ink); }
+  details.rules { border-top: 1px solid var(--rule); padding-top: 10px; font-size: 14px; }
+  details.rules summary { cursor: pointer; font-weight: 700; }
+  details.rules li { margin: 4px 0; } details.rules ul { padding-left: 1.2em; margin: 8px 0; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>跳棋</h1>
+    <p>星形跳棋：把自己的 10 顆棋子全部送到正對面的三角形就贏。可以一格一格走，也可以連續跳。</p>
+    <a class="home" href="./">← 全部棋類</a>
+  </header>
+  <div class="stage">
+    <svg id="board" viewBox="0 0 520 600" role="img" aria-label="跳棋棋盤"></svg>
+    <div class="fx" id="fx" aria-live="assertive"></div>
+  </div>
+  <aside class="panel">
+    <div class="status" aria-live="polite"><div class="msg" id="msg"></div><div class="sub" id="sub"></div></div>
+    <div class="score" id="score"></div>
+    <div class="group"><span class="label">玩法</span>
+      <div class="seg" id="modeSeg"><button data-mode="local">雙人同機</button><button data-mode="ai">對電腦</button></div></div>
+    <div class="group" id="aiOpts"><span class="label">我是</span>
+      <div class="seg" id="sideSeg"><button data-first="1">紅（先走）</button><button data-first="0">藍</button></div>
+      <span class="label" style="margin-top:6px">電腦棋力</span>
+      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">中等</button><button data-lv="2">困難</button></div></div>
+    <div class="actions">
+      <button class="btn primary" id="btnNew">新局</button><button class="btn" id="btnUndo">悔棋</button><button class="btn" id="btnGiveUp">認輸</button>
+    </div>
+    <div class="confirm" id="confirm" hidden><span id="confirmText"></span><button class="btn primary" id="confirmYes">確定</button><button class="btn" id="confirmNo">取消</button></div>
+    <details class="rules"><summary>玩法說明</summary>
+      <ul>
+        <li>六角星形棋盤，兩人對戰：紅方從下面的三角形出發，要走到上面的三角形；藍方相反。紅先。</li>
+        <li>每一手可以二選一：
+          <ul><li><b>走一步</b>：移到相鄰（六個方向）的空位。</li>
+          <li><b>跳</b>：隔著相鄰的一顆棋子（自己的或對方的都可以）跳到它正後方的空位；跳完如果還能跳，可以繼續連跳，方向可以轉。</li></ul>
+          走一步之後就不能再跳；跳不會吃掉棋子。</li>
+        <li>點自己的棋子，所有能到的位置都會亮起來（包含連跳可以到的地方），點目的地就走過去。</li>
+        <li><b>勝利</b>：對面的三角形 10 個位置全部被佔滿，而且裡面至少有一顆是你的，就算你贏（避免對方故意把棋子留在你的目標裡擋路）。</li>
+        <li>電腦或對手如果連續 200 手都沒有人贏，就判和局。</li>
+      </ul>
+    </details>
+  </aside>
+</div>
+
+<script>
+/* ───────── 規則與電腦 ─────────
+   座標：軸向 (q, r)，s = -q-r。星形 = 兩個大三角形的聯集：(q,r,s 都 ≥ -4) 或 (q,r,s 都 ≤ 4)，共 121 點。
+   紅（1）起點：r ≥ 5（下面），目標 r ≤ -5（上面）；藍（2）相反。 */
+function CCENGINE() {
+  const PTS = [], IDX = new Map();
+  for (let r = -8; r <= 8; r++) for (let q = -8; q <= 8; q++) {
+    const s = -q - r;
+    if ((q >= -4 && r >= -4 && s >= -4) || (q <= 4 && r <= 4 && s <= 4)) { IDX.set(q + "," + r, PTS.length); PTS.push([q, r]); }
+  }
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, -1], [-1, 1]];
+  const at = (q, r) => { const k = IDX.get(q + "," + r); return k === undefined ? -1 : k; };
+  const NB = PTS.map(([q, r]) => DIRS.map(([dq, dr]) => [at(q + dq, r + dr), at(q + 2 * dq, r + 2 * dr)]));
+  const HOME = { 1: PTS.map((p, i) => (p[1] >= 5 ? i : -1)).filter(i => i >= 0), 2: PTS.map((p, i) => (p[1] <= -5 ? i : -1)).filter(i => i >= 0) };
+  const GOAL = { 1: HOME[2], 2: HOME[1] };
+  const TIP = { 1: at(4, -8), 2: at(-4, 8) };
+  const dist = (a, b) => { const [q1, r1] = PTS[a], [q2, r2] = PTS[b]; return (Math.abs(q1 - q2) + Math.abs(r1 - r2) + Math.abs(q1 + r1 - q2 - r2)) / 2; };
+  function start() { const b = Array(PTS.length).fill(0); for (const i of HOME[1]) b[i] = 1; for (const i of HOME[2]) b[i] = 2; return b; }
+  /* 從 i 出發能到的所有點：{to: path} */
+  function reach(b, i) {
+    const out = new Map();
+    for (const [n1] of NB[i]) if (n1 >= 0 && !b[n1]) out.set(n1, [i, n1]);
+    const seen = new Set([i]), queue = [[i, [i]]];
+    while (queue.length) {
+      const [cur, path] = queue.shift();
+      for (const [n1, n2] of NB[cur]) {
+        if (n1 < 0 || n2 < 0 || !b[n1] || b[n2] || seen.has(n2)) continue;
+        if (n2 === i) continue;
+        seen.add(n2); const np = path.concat(n2);
+        if (!out.has(n2) || out.get(n2).length > np.length) out.set(n2, np);
+        queue.push([n2, np]);
+      }
+    }
+    return out;
+  }
+  function moves(b, p) {
+    const out = [];
+    for (let i = 0; i < b.length; i++) if (b[i] === p) for (const [t, path] of reach(b, i)) out.push({ f: i, t, path });
+    return out;
+  }
+  function won(b, p) { const g = GOAL[p]; return g.every(i => b[i]) && g.some(i => b[i] === p); }
+  /* 評估：棋子到對面尖端的距離總和（越小越好），落後太多的棋子加罰 */
+  function score(b, p) {
+    let s = 0, mx = 0;
+    for (let i = 0; i < b.length; i++) if (b[i] === p) { const d = dist(i, TIP[p]); s += d; if (d > mx) mx = d; }
+    return s + mx * 0.6;
+  }
+  function choose(b, p, level, seed) {
+    let sd = (seed >>> 0) || 7; const rnd = () => { sd ^= sd << 13; sd >>>= 0; sd ^= sd >>> 17; sd ^= sd << 5; sd >>>= 0; return sd / 4294967296; };
+    const o = 3 - p, ms = moves(b, p);
+    if (!ms.length) return null;
+    const val = (bb) => (won(bb, p) ? -1e6 : 0) + score(bb, p) - (level >= 1 ? 0.5 * score(bb, o) : 0);
+    const appl = (bb, m) => { const n = bb.slice(); n[m.t] = n[m.f]; n[m.f] = 0; return n; };
+    // 不要退回自己家裡，也不要讓已經到目標的棋子出來（除非沒別的）
+    let scored = ms.map(m => {
+      const nb = appl(b, m);
+      let v = val(nb);
+      if (GOAL[p].includes(m.f) && !GOAL[p].includes(m.t)) v += 6;
+      return [m, v, nb];
+    }).sort((x, y) => x[1] - y[1]);
+    if (level === 2) {                      // 困難：跳棋主要比速度 → 前幾名再看「自己下一步」能接著走多遠（鋪連跳的路）
+      scored = scored.slice(0, 16).map(([m, v, nb]) => {
+        if (won(nb, p)) return [m, -1e9, nb];
+        let next = v;
+        for (const m2 of moves(nb, p)) { const n2 = appl(nb, m2); const v2 = val(n2); if (v2 < next) next = v2; }
+        return [m, 0.45 * v + 0.55 * next, nb];
+      }).sort((x, y) => x[1] - y[1]);
+    }
+    if (level === 0 && rnd() < 0.45) return scored[Math.min(scored.length - 1, (rnd() * 4) | 0)][0];
+    const top = scored.filter(x => x[1] <= scored[0][1] + 1e-9);
+    return top[(rnd() * top.length) | 0][0];
+  }
+  return { PTS, HOME, GOAL, start, reach, moves, won, choose };
+}
+
+const E = CCENGINE();
+const $ = id => document.getElementById(id);
+const svg = $("board"), NS = "http://www.w3.org/2000/svg", STORE = "checkers-v1";
+let S = null, G = null, thinking = false, token = 0, pending = null, sel = -1;
+const name = p => (p === 1 ? "紅" : "藍");
+function defaults() { return { mode: "ai", humanFirst: true, level: 1, moves: [], over: null, tally: { r: 0, b: 0, d: 0 } }; }
+function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { } }
+function replay() {
+  const b = E.start(); let turn = 1, result = 0, path = null;
+  for (const mv of S.moves) {
+    const [f, t] = mv.split("-").map(Number);
+    const p = E.reach(b, f).get(t); if (b[f] !== turn || !p) throw new Error("illegal");
+    b[t] = b[f]; b[f] = 0; path = p;
+    if (E.won(b, turn)) result = turn;
+    turn = 3 - turn;
+  }
+  if (!result && S.moves.length >= 200) result = 3;
+  return { b, turn, result, path };
+}
+const humanTurn = () => S.mode === "local" || (G.turn === 1) === S.humanFirst;
+const aiTurn = () => S.mode === "ai" && !S.over && !humanTurn();
+function play(f, t) {
+  S.moves.push(`${f}-${t}`); sel = -1; G = replay();
+  if (G.result) finish(G.result);
+  save(); render(); maybeAi();
+}
+function finish(r) {
+  S.over = { r };
+  if (r === 3) S.tally.d++; else if (r === 1) S.tally.r++; else S.tally.b++;
+  stamp(r === 3 ? "和局" : `${name(r)}勝`, S.mode === "ai" && r !== 3 ? ((r === 1) === S.humanFirst ? "你贏了" : "電腦贏了") : r === 3 ? "200 手沒有分出勝負" : "全部到達對面");
+}
+function stamp(big, small) {
+  const box = $("fx"); box.innerHTML = "";
+  const d = document.createElement("div"); d.className = "stamp";
+  d.innerHTML = `<span class="big">${big}</span>` + (small ? `<span class="small">${small}</span>` : "");
+  box.appendChild(d);
+}
+function maybeAi() {
+  if (!aiTurn()) return;
+  thinking = true; render();
+  const my = token;
+  setTimeout(() => {
+    if (my !== token) return;
+    const m = E.choose(G.b.slice(), G.turn, S.level, (Math.random() * 4e9) >>> 0);
+    thinking = false;
+    if (m) play(m.f, m.t); else render();
+  }, 450);
+}
+
+function el(t, a, p) { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; }
+const DX = 30, DY = DX * Math.sqrt(3) / 2;
+const XY = i => { const [q, r] = E.PTS[i]; return [260 + (q + r / 2) * DX, 300 + r * DY]; };
+function draw() {
+  svg.innerHTML = "";
+  el("rect", { x: 0, y: 0, width: 520, height: 600, rx: 14, fill: "#d9b57c" }, svg);
+  // 兩個大三角形
+  const tri = (pts, fill) => el("polygon", { points: pts.map(([x, y]) => x + "," + y).join(" "), fill, opacity: .35 }, svg);
+  const T = (q, r) => [260 + (q + r / 2) * DX, 300 + r * DY];
+  tri([T(4, -8), T(-8, 4), T(4, 4)], "#fff7e6");       // q,r,s 都 ≤ 4 的大三角形
+  tri([T(-4, 8), T(8, -4), T(-4, -4)], "#fff7e6");      // q,r,s 都 ≥ -4 的大三角形
+  for (const i of E.HOME[1]) { const [x, y] = XY(i); el("circle", { cx: x, cy: y, r: 13, fill: "rgba(176,38,29,.18)" }, svg); }
+  for (const i of E.HOME[2]) { const [x, y] = XY(i); el("circle", { cx: x, cy: y, r: 13, fill: "rgba(46,95,168,.18)" }, svg); }
+  if (G.path && G.path.length > 1) el("polyline", { points: G.path.map(i => XY(i).join(",")).join(" "), fill: "none", stroke: "var(--jade)", "stroke-width": 3, "stroke-dasharray": "6 5", opacity: .9 }, svg);
+  const reach = sel >= 0 ? E.reach(G.b, sel) : new Map();
+  const lastT = G.path ? G.path[G.path.length - 1] : -1;
+  for (let i = 0; i < E.PTS.length; i++) {
+    const [x, y] = XY(i), v = G.b[i];
+    el("circle", { cx: x, cy: y, r: 5, fill: "#7a5634", opacity: .55 }, svg);
+    if (v) {
+      el("circle", { cx: x + 1, cy: y + 2, r: 12, fill: "rgba(0,0,0,.3)" }, svg);
+      el("circle", { cx: x, cy: y, r: 12, fill: v === 1 ? "#c8352a" : "#2e5fa8", stroke: i === sel ? "#fff" : "rgba(0,0,0,.4)", "stroke-width": i === sel ? 3 : 1.2 }, svg);
+      el("circle", { cx: x - 4, cy: y - 4, r: 4, fill: "#fff", opacity: .35 }, svg);
+      if (i === lastT) el("circle", { cx: x, cy: y, r: 4, fill: "#fff" }, svg);
+    }
+    if (reach.has(i)) el("circle", { cx: x, cy: y, r: 9, fill: "var(--jade)", opacity: .7 }, svg);
+  }
+}
+function render() {
+  draw();
+  const pr = (s2, attr, val) => document.querySelectorAll(s2 + " button").forEach(b => b.setAttribute("aria-pressed", b.dataset[attr] === String(val)));
+  pr("#modeSeg", "mode", S.mode); pr("#sideSeg", "first", S.humanFirst ? 1 : 0); pr("#lvlSeg", "lv", S.level);
+  $("aiOpts").hidden = S.mode !== "ai";
+  let msg;
+  if (S.over) msg = S.over.r === 3 ? "和局" : S.over.resign ? `${name(3 - S.over.r)}認輸，${name(S.over.r)}勝` : `${name(S.over.r)}勝`;
+  else if (thinking) msg = "電腦思考中…";
+  else msg = S.mode === "ai" ? (humanTurn() ? `輪到你（${name(G.turn)}）` : "電腦") : `輪到${name(G.turn)}`;
+  const inGoal = p => E.GOAL[p].filter(i => G.b[i] === p).length;
+  $("msg").textContent = msg;
+  $("sub").textContent = S.over ? "按「新局」再來一盤" : sel >= 0 ? "點亮起來的點走過去（連跳的路線會自動算）" : `第 ${S.moves.length + 1} 手｜點自己的棋子`;
+  $("score").innerHTML = `<span>到達：紅 <b>${inGoal(1)}</b>/10　藍 <b>${inGoal(2)}</b>/10</span><span>戰績 紅${S.tally.r}／藍${S.tally.b}</span>`;
+  $("btnUndo").disabled = !S.moves.length;
+  $("btnGiveUp").disabled = !!S.over || !S.moves.length;
+}
+svg.addEventListener("click", evt => {
+  if (S.over || thinking || !humanTurn()) return;
+  const pt = svg.createSVGPoint(); pt.x = evt.clientX; pt.y = evt.clientY;
+  const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+  let best = -1, bd = 1e9;
+  for (let i = 0; i < E.PTS.length; i++) { const [x, y] = XY(i); const d = Math.hypot(x - p.x, y - p.y); if (d < bd) { bd = d; best = i; } }
+  if (bd > 16) return;
+  if (sel >= 0 && E.reach(G.b, sel).has(best)) { play(sel, best); return; }
+  if (G.b[best] === G.turn) { sel = sel === best ? -1 : best; render(); return; }
+  sel = -1; render();
+});
+function ask(text, yes) { pending = yes; $("confirmText").textContent = text; $("confirm").hidden = false; }
+$("confirmYes").onclick = () => { $("confirm").hidden = true; const f = pending; pending = null; if (f) f(); };
+$("confirmNo").onclick = () => { $("confirm").hidden = true; pending = null; };
+function newGame() { token++; thinking = false; sel = -1; S.moves = []; S.over = null; $("fx").innerHTML = ""; G = replay(); save(); render(); maybeAi(); }
+$("btnNew").onclick = () => (S.moves.length && !S.over ? ask("放棄這盤、重新開始？", newGame) : newGame());
+$("btnUndo").onclick = () => {
+  if (!S.moves.length) return;
+  token++; thinking = false; sel = -1; $("fx").innerHTML = "";
+  if (S.over) { if (S.over.resign) { S.over = null; G = replay(); save(); render(); return; } const r = S.over.r; if (r === 3) S.tally.d--; else if (r === 1) S.tally.r--; else S.tally.b--; S.over = null; }
+  S.moves.pop(); G = replay();
+  if (S.mode === "ai") while (S.moves.length && !humanTurn()) { S.moves.pop(); G = replay(); }
+  save(); render(); maybeAi();
+};
+$("btnGiveUp").onclick = () => ask("認輸這盤？", () => {
+  token++; thinking = false;
+  const loser = S.mode === "ai" ? (S.humanFirst ? 1 : 2) : G.turn, w = 3 - loser;
+  S.over = { r: w, resign: true }; if (w === 1) S.tally.r++; else S.tally.b++;
+  stamp(`${name(w)}勝`, `${name(loser)}認輸`); save(); render();
+});
+const bind = (s2, f) => document.querySelectorAll(s2 + " button").forEach(b => b.onclick = () => f(b.dataset));
+bind("#modeSeg", d => { if (d.mode === S.mode) return; S.mode = d.mode; token++; thinking = false; save(); render(); maybeAi(); });
+bind("#sideSeg", d => { const f = d.first === "1"; if (f === S.humanFirst) return; S.humanFirst = f; token++; thinking = false; save(); render(); maybeAi(); });
+bind("#lvlSeg", d => { S.level = +d.lv; save(); render(); });
+(function init() {
+  let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
+  S = Object.assign(defaults(), st || {});
+  try { G = replay(); } catch (e) { S.moves = []; S.over = null; G = replay(); }
+  render(); if (!S.over) maybeAi();
+})();
+</script>

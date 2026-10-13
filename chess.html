@@ -1,0 +1,521 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="棋盤小館"><meta name="theme-color" content="#131917"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon.png"><link rel="icon" href="icon.png"><style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style><script>if('serviceWorker' in navigator&&(location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname)))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))</script><title>西洋棋</title>
+<style>
+  :root {
+    --ground: #e7ece4; --panel: #f5f7f2; --ink: #1d2723; --muted: #5d6b64; --rule: #cbd4cb;
+    --jade: #2e7a67; --jade-soft: rgba(46, 122, 103, .16); --accent: #b0261d; --x: #b0261d; --o: #2e5fa8;
+    --f-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #131917; --panel: #1b2320; --ink: #e2e9e4; --muted: #95a59d; --rule: #2b3732;
+      --jade: #5fb59d; --jade-soft: rgba(95, 181, 157, .18); --accent: #e0574b; --x: #e0574b; --o: #6b9be0; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --ground: #131917; --panel: #1b2320; --ink: #e2e9e4; --muted: #95a59d; --rule: #2b3732;
+    --jade: #5fb59d; --jade-soft: rgba(95, 181, 157, .18); --accent: #e0574b; --x: #e0574b; --o: #6b9be0; color-scheme: dark; }
+  [hidden] { display: none !important; }
+  html, body { background: var(--ground); color: var(--ink); }
+  body { font-family: var(--f-body); font-size: 15px; line-height: 1.55; padding-inline: 16px; padding-block: 18px 28px; margin: 0; }
+  .wrap { max-width: 1000px; margin: 0 auto; display: grid; gap: 22px; grid-template-columns: minmax(0, 560px) minmax(0, 340px); justify-content: center; align-items: start; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 560px); } }
+  header.top { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  header.top h1 { font-weight: 900; font-size: clamp(30px, 6vw, 40px); line-height: 1; margin: 0; letter-spacing: .06em; }
+  header.top p { margin: 0; color: var(--muted); font-size: 13px; flex: 1 1 220px; }
+  a.home { margin-left: auto; color: var(--muted); text-decoration: none; font-size: 14px; border: 1px solid var(--rule); border-radius: 999px; padding: 5px 14px; }
+  .stage { position: relative; }
+  svg#board { width: 100%; height: auto; display: block; touch-action: manipulation; user-select: none; -webkit-user-select: none; border-radius: 12px; background: var(--panel); border: 1px solid var(--rule); }
+  .fx { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  .stamp { display: grid; justify-items: center; gap: 6px; transform: rotate(-6deg); color: var(--accent); animation: stampIn .42s cubic-bezier(.2,.9,.3,1.25) both; }
+  .stamp .big { font-family: "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif; font-weight: 900; font-size: clamp(56px, 15vw, 100px); line-height: 1; letter-spacing: .08em;
+    text-shadow: 3px 0 0 #fff6ea, -3px 0 0 #fff6ea, 0 3px 0 #fff6ea, 0 -3px 0 #fff6ea, 0 8px 18px rgba(0,0,0,.45); }
+  .stamp .small { font-weight: 700; font-size: 15px; color: #fff6ea; background: rgba(27, 29, 28, .8); padding: 3px 14px; border-radius: 999px; }
+  @keyframes stampIn { 0% { opacity: 0; transform: scale(2.2) rotate(-16deg); } 60% { opacity: 1; transform: scale(.94) rotate(-5deg); } 100% { opacity: 1; transform: scale(1) rotate(-6deg); } }
+  @media (prefers-reduced-motion: reduce) { .stamp { animation: none; } }
+  aside.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; display: grid; gap: 16px; min-width: 0; }
+  .status .msg { font-weight: 700; font-size: 17px; } .status .sub { color: var(--muted); font-size: 13px; }
+  .group { display: grid; gap: 6px; } .label { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+  .seg { display: flex; border: 1px solid var(--rule); border-radius: 9px; overflow: hidden; }
+  .seg button { flex: 1; background: transparent; border: 0; color: var(--muted); font: inherit; font-size: 14px; padding: 7px 0; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--rule); }
+  .seg button[aria-pressed="true"] { background: var(--jade-soft); color: var(--ink); font-weight: 700; }
+  .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .btn { font: inherit; font-size: 14px; padding: 8px 6px; border-radius: 9px; border: 1px solid var(--rule); background: var(--ground); color: var(--ink); cursor: pointer; }
+  .btn.primary { background: var(--jade); border-color: var(--jade); color: #fff; font-weight: 700; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--jade); outline-offset: 2px; }
+  .confirm { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+  .confirm .btn { font-size: 13px; padding: 4px 10px; }
+  .score { display: flex; gap: 14px; font-size: 14px; color: var(--muted); } .score b { color: var(--ink); }
+  details.rules { border-top: 1px solid var(--rule); padding-top: 10px; font-size: 14px; }
+  details.rules summary { cursor: pointer; font-weight: 700; }
+  details.rules li { margin: 4px 0; } details.rules ul { padding-left: 1.2em; margin: 8px 0; }
+  .moves { max-height: 180px; overflow-y: auto; border-top: 1px solid var(--rule); padding-top: 8px; font-size: 14px; font-variant-numeric: tabular-nums;
+    display: grid; grid-template-columns: 2.4em 1fr 1fr; gap: 2px 8px; }
+  .moves .n { color: var(--muted); font-size: 12px; }
+  .promo { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.35); border-radius: 12px; }
+  .promo div { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 12px; display: grid; gap: 8px; justify-items: center; }
+  .promo .opts { display: flex; gap: 8px; }
+  .promo button { font-size: 40px; width: 64px; height: 64px; border-radius: 10px; border: 1px solid var(--rule); background: var(--ground); cursor: pointer; line-height: 1; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>西洋棋</h1>
+    <p>國際象棋：把對方的國王將死就贏。入堡、吃過路兵、升變、各種和棋都照規則判。</p>
+    <a class="home" href="./">← 全部棋類</a>
+  </header>
+  <div class="stage">
+    <svg id="board" viewBox="0 0 560 560" role="img" aria-label="西洋棋盤"></svg>
+    <div class="fx" id="fx" aria-live="assertive"></div>
+    <div class="promo" id="promo" hidden><div><b>升變成</b><div class="opts" id="promoOpts"></div><button class="btn" id="promoCancel" style="font-size:14px;width:auto;height:auto;padding:4px 12px">取消</button></div></div>
+  </div>
+  <aside class="panel">
+    <div class="status" aria-live="polite"><div class="msg" id="msg"></div><div class="sub" id="sub"></div></div>
+    <div class="group"><span class="label">玩法</span>
+      <div class="seg" id="modeSeg"><button data-mode="local">雙人同機</button><button data-mode="ai">對電腦</button></div></div>
+    <div class="group" id="aiOpts"><span class="label">我執</span>
+      <div class="seg" id="sideSeg"><button data-white="1">白（先走）</button><button data-white="0">黑</button></div>
+      <span class="label" style="margin-top:6px">電腦棋力</span>
+      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">中等</button><button data-lv="2">困難</button></div></div>
+    <div class="actions">
+      <button class="btn primary" id="btnNew">新局</button><button class="btn" id="btnUndo">悔棋</button><button class="btn" id="btnFlip">翻轉</button>
+      <button class="btn" id="btnHint">提示</button><button class="btn" id="btnDraw">求和</button><button class="btn" id="btnGiveUp">認輸</button>
+    </div>
+    <div class="confirm" id="confirm" hidden><span id="confirmText"></span><button class="btn primary" id="confirmYes">確定</button><button class="btn" id="confirmNo">取消</button></div>
+    <div class="group"><span class="label">棋譜</span><div class="moves" id="moves"></div></div>
+    <details class="rules"><summary>玩法說明</summary>
+      <ul>
+        <li>白先。每方 16 子：國王♚、皇后♛、城堡♜×2、主教♝×2、騎士♞×2、兵♟×8。</li>
+        <li><b>走法</b>：國王走一格；皇后直、橫、斜走任意格；城堡直橫任意格；主教斜走任意格；騎士走「日」字（可以跳過其他棋子）；兵往前一格，第一次可以走兩格，吃子是斜前方一格。</li>
+        <li><b>將軍、將死</b>：國王被攻擊叫「將軍」，一定要解除；不能自己走進被攻擊的位置。被將軍又沒有任何解法＝將死，輸了。</li>
+        <li><b>入堡</b>：國王和城堡都還沒動過、中間沒有棋子、國王沒被將軍、經過和到達的格子都沒被攻擊時，國王往城堡方向走兩格，城堡跳到國王另一邊。點國王再點兩格外的位置就能入堡。</li>
+        <li><b>吃過路兵</b>：對方的兵第一步走兩格、剛好停在你的兵旁邊，你可以在下一步斜走到它經過的那格把它吃掉（只有緊接著的那一步可以）。</li>
+        <li><b>升變</b>：兵走到底線一定要升變，可以選皇后、城堡、主教或騎士。</li>
+        <li><b>和棋</b>：逼和（輪到的一方沒被將軍但沒有合法步）；同一局面第三次出現；連續 50 回合（雙方各 50 步）沒有吃子也沒有動兵；雙方子力都不足以將死（例如只剩國王、或國王＋一個主教／騎士）；也可以提出求和。</li>
+        <li>點自己的棋子會標出可以走的格子（點：空格；圈：可以吃）。</li>
+      </ul>
+    </details>
+  </aside>
+</div>
+
+<script>
+/* ───────── 規則與電腦 ─────────
+   盤面 64 格，0＝a8 … 63＝h1（上面是第 8 橫列）；大寫白、小寫黑、"." 空。
+   狀態 {b, w（輪到白）, c（入堡權 "KQkq"）, ep（吃過路兵的格子或 -1）, h（50 步計數）, n（回合）} */
+function CHESSENGINE() {
+  const VAL = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
+  const PST = {
+    p: [0, 0, 0, 0, 0, 0, 0, 0, 50, 50, 50, 50, 50, 50, 50, 50, 10, 10, 20, 30, 30, 20, 10, 10, 5, 5, 10, 25, 25, 10, 5, 5, 0, 0, 0, 20, 20, 0, 0, 0, 5, -5, -10, 0, 0, -10, -5, 5, 5, 10, 10, -20, -20, 10, 10, 5, 0, 0, 0, 0, 0, 0, 0, 0],
+    n: [-50, -40, -30, -30, -30, -30, -40, -50, -40, -20, 0, 0, 0, 0, -20, -40, -30, 0, 10, 15, 15, 10, 0, -30, -30, 5, 15, 20, 20, 15, 5, -30, -30, 0, 15, 20, 20, 15, 0, -30, -30, 5, 10, 15, 15, 10, 5, -30, -40, -20, 0, 5, 5, 0, -20, -40, -50, -40, -30, -30, -30, -30, -40, -50],
+    b: [-20, -10, -10, -10, -10, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 10, 10, 5, 0, -10, -10, 5, 5, 10, 10, 5, 5, -10, -10, 0, 10, 10, 10, 10, 0, -10, -10, 10, 10, 10, 10, 10, 10, -10, -10, 5, 0, 0, 0, 0, 5, -10, -20, -10, -10, -10, -10, -10, -10, -20],
+    r: [0, 0, 0, 0, 0, 0, 0, 0, 5, 10, 10, 10, 10, 10, 10, 5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, 0, 0, 0, 5, 5, 0, 0, 0],
+    q: [-20, -10, -10, -5, -5, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 5, 5, 5, 0, -10, -5, 0, 5, 5, 5, 5, 0, -5, 0, 0, 5, 5, 5, 5, 0, -5, -10, 5, 5, 5, 5, 5, 0, -10, -10, 0, 5, 0, 0, 0, 0, -10, -20, -10, -10, -5, -5, -10, -10, -20],
+    k: [-30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -20, -30, -30, -40, -40, -30, -30, -20, -10, -20, -20, -20, -20, -20, -20, -10, 20, 20, 0, 0, 0, 0, 20, 20, 20, 30, 10, 0, 0, 10, 30, 20],
+    ke: [-50, -40, -30, -20, -20, -30, -40, -50, -30, -20, -10, 0, 0, -10, -20, -30, -30, -10, 20, 30, 30, 20, -10, -30, -30, -10, 30, 40, 40, 30, -10, -30, -30, -10, 30, 40, 40, 30, -10, -30, -30, -10, 20, 30, 30, 20, -10, -30, -30, -30, 0, 0, 0, 0, -30, -30, -50, -30, -30, -30, -30, -30, -30, -50],
+  };
+  const START = "rnbqkbnrpppppppp................................PPPPPPPPRNBQKBNR";
+  const isW = c => c >= "A" && c <= "Z", isB = c => c >= "a" && c <= "z";
+  const own = (c, w) => (w ? isW(c) : isB(c));
+  const F = s => s & 7, R = s => s >> 3;
+  const KN = [[-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1]];
+  const KG = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
+  const DIAG = [[-1, -1], [-1, 1], [1, -1], [1, 1]], ORTH = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  function init() { return { b: START.split(""), w: true, c: "KQkq", ep: -1, h: 0, n: 1 }; }
+  function attacked(b, sq, byW) {
+    const f0 = F(sq), r0 = R(sq);
+    const at = (f, r) => (f >= 0 && f < 8 && r >= 0 && r < 8 ? b[r * 8 + f] : null);
+    const pr = byW ? r0 + 1 : r0 - 1, P = byW ? "P" : "p";
+    if (at(f0 - 1, pr) === P || at(f0 + 1, pr) === P) return true;
+    for (const [dr, df] of KN) if (at(f0 + df, r0 + dr) === (byW ? "N" : "n")) return true;
+    for (const [dr, df] of KG) if (at(f0 + df, r0 + dr) === (byW ? "K" : "k")) return true;
+    for (const [dirs, a, q] of [[DIAG, "B", "Q"], [ORTH, "R", "Q"]]) for (const [dr, df] of dirs) {
+      let f = f0 + df, r = r0 + dr;
+      while (f >= 0 && f < 8 && r >= 0 && r < 8) {
+        const c = b[r * 8 + f];
+        if (c !== ".") { if (c === (byW ? a : a.toLowerCase()) || c === (byW ? q : q.toLowerCase())) return true; break; }
+        f += df; r += dr;
+      }
+    }
+    return false;
+  }
+  const kingSq = (b, w) => b.indexOf(w ? "K" : "k");
+  const inCheck = (s, w) => attacked(s.b, kingSq(s.b, w), !w);
+  /* 走法：{f, t, p（升變）, k（種類：0 普通、1 吃過路兵、2 入堡、3 兩格兵）} */
+  function pseudo(s) {
+    const b = s.b, w = s.w, out = [];
+    for (let sq = 0; sq < 64; sq++) {
+      const c = b[sq]; if (c === "." || !own(c, w)) continue;
+      const t = c.toLowerCase(), f0 = F(sq), r0 = R(sq);
+      const add = (to, k) => out.push({ f: sq, t: to, p: "", k: k || 0 });
+      if (t === "p") {
+        const dir = w ? -1 : 1, start = w ? 6 : 1, last = w ? 0 : 7, one = sq + dir * 8;
+        const pushP = to => { if (R(to) === last) for (const p of "qrbn") out.push({ f: sq, t: to, p, k: 0 }); else add(to); };
+        if (one >= 0 && one < 64 && b[one] === ".") {
+          pushP(one);
+          if (r0 === start && b[one + dir * 8] === ".") add(one + dir * 8, 3);
+        }
+        for (const df of [-1, 1]) {
+          const f = f0 + df, r = r0 + dir; if (f < 0 || f > 7 || r < 0 || r > 7) continue;
+          const to = r * 8 + f;
+          if (b[to] !== "." && !own(b[to], w)) pushP(to);
+          else if (to === s.ep) add(to, 1);
+        }
+      } else if (t === "n" || t === "k") {
+        for (const [dr, df] of t === "n" ? KN : KG) {
+          const f = f0 + df, r = r0 + dr; if (f < 0 || f > 7 || r < 0 || r > 7) continue;
+          const to = r * 8 + f; if (b[to] === "." || !own(b[to], w)) add(to);
+        }
+        if (t === "k") {
+          const home = w ? 60 : 4;
+          if (sq === home && !attacked(b, home, !w)) {
+            if (s.c.includes(w ? "K" : "k") && b[home + 1] === "." && b[home + 2] === "." && b[home + 3] === (w ? "R" : "r")
+              && !attacked(b, home + 1, !w) && !attacked(b, home + 2, !w)) add(home + 2, 2);
+            if (s.c.includes(w ? "Q" : "q") && b[home - 1] === "." && b[home - 2] === "." && b[home - 3] === "." && b[home - 4] === (w ? "R" : "r")
+              && !attacked(b, home - 1, !w) && !attacked(b, home - 2, !w)) add(home - 2, 2);
+          }
+        }
+      } else {
+        const dirs = t === "b" ? DIAG : t === "r" ? ORTH : DIAG.concat(ORTH);
+        for (const [dr, df] of dirs) {
+          let f = f0 + df, r = r0 + dr;
+          while (f >= 0 && f < 8 && r >= 0 && r < 8) {
+            const to = r * 8 + f;
+            if (b[to] === ".") add(to); else { if (!own(b[to], w)) add(to); break; }
+            f += df; r += dr;
+          }
+        }
+      }
+    }
+    return out;
+  }
+  function make(s, m) {
+    const b = s.b.slice(), c = b[m.f], cap = b[m.t];
+    b[m.t] = m.p ? (s.w ? m.p.toUpperCase() : m.p) : c; b[m.f] = ".";
+    if (m.k === 1) b[m.t + (s.w ? 8 : -8)] = ".";
+    if (m.k === 2) { if (F(m.t) === 6) { b[m.t - 1] = b[m.t + 1]; b[m.t + 1] = "."; } else { b[m.t + 1] = b[m.t - 2]; b[m.t - 2] = "."; } }
+    let cr = s.c;
+    const strip = ch => { cr = cr.replace(ch, ""); };
+    if (c === "K") { strip("K"); strip("Q"); } if (c === "k") { strip("k"); strip("q"); }
+    for (const [sq, ch] of [[63, "K"], [56, "Q"], [7, "k"], [0, "q"]]) if (m.f === sq || m.t === sq) strip(ch);
+    const pawn = c === "P" || c === "p";
+    return { b, w: !s.w, c: cr, ep: m.k === 3 ? (m.f + m.t) / 2 : -1, h: pawn || cap !== "." || m.k === 1 ? 0 : s.h + 1, n: s.w ? s.n : s.n + 1 };
+  }
+  function legal(s) { return pseudo(s).filter(m => !inCheck(make(s, m), s.w)); }
+  function key(s) {
+    // 吃過路兵只有在真的能吃時才算進局面
+    let ep = -1;
+    if (s.ep >= 0) { const P = s.w ? "P" : "p", f = F(s.ep), r = R(s.ep) + (s.w ? 1 : -1); if ((f > 0 && s.b[r * 8 + f - 1] === P) || (f < 7 && s.b[r * 8 + f + 1] === P)) ep = s.ep; }
+    return s.b.join("") + (s.w ? "w" : "b") + s.c + ep;
+  }
+  function insufficient(b) {
+    const pcs = b.filter(c => c !== "." && c.toLowerCase() !== "k");
+    if (!pcs.length) return true;
+    if (pcs.length === 1 && "nNbB".includes(pcs[0])) return true;
+    if (pcs.every(c => c.toLowerCase() === "b")) {
+      const colors = new Set(); b.forEach((c, i) => { if (c.toLowerCase() === "b") colors.add((F(i) + R(i)) % 2); });
+      return colors.size === 1;
+    }
+    return false;
+  }
+  function evaluate(s) {
+    let sc = 0, mat = 0;
+    for (const c of s.b) if (c !== "." && c.toLowerCase() !== "k" && c.toLowerCase() !== "p") mat += VAL[c.toLowerCase()];
+    const endgame = mat <= 2600;
+    for (let i = 0; i < 64; i++) {
+      const c = s.b[i]; if (c === ".") continue;
+      const t = c.toLowerCase(), wt = isW(c), idx = wt ? i : (7 - R(i)) * 8 + F(i);
+      const v = VAL[t] + (t === "k" && endgame ? PST.ke : PST[t])[idx];
+      sc += wt ? v : -v;
+    }
+    return s.w ? sc : -sc;
+  }
+  let deadline = 0, stop = false, nodes = 0;
+  const order = (s, ms) => ms.map(m => [m, (s.b[m.t] !== "." ? 10 * VAL[s.b[m.t].toLowerCase()] - VAL[s.b[m.f].toLowerCase()] / 10 : 0) + (m.p === "q" ? 800 : 0) + (m.k === 1 ? 900 : 0)])
+    .sort((a, b) => b[1] - a[1]).map(x => x[0]);
+  function quiesce(s, alpha, beta, depth) {
+    if ((++nodes & 2047) === 0 && Date.now() > deadline) stop = true;
+    const stand = evaluate(s);
+    if (stand >= beta) return beta;
+    if (stand > alpha) alpha = stand;
+    if (depth <= 0) return alpha;
+    for (const m of order(s, pseudo(s).filter(m => s.b[m.t] !== "." || m.k === 1 || m.p === "q"))) {
+      const ns = make(s, m); if (inCheck(ns, s.w)) continue;
+      const v = -quiesce(ns, -beta, -alpha, depth - 1);
+      if (stop) return 0;
+      if (v >= beta) return beta; if (v > alpha) alpha = v;
+    }
+    return alpha;
+  }
+  function ab(s, depth, alpha, beta, ply, seen) {
+    if ((++nodes & 2047) === 0 && Date.now() > deadline) stop = true;
+    if (stop) return 0;
+    if (ply > 0 && (s.h >= 100 || seen.has(key(s)))) return 0;
+    const chk = inCheck(s, s.w);
+    if (depth <= 0 && !chk) return quiesce(s, alpha, beta, 6);
+    let any = false, best = -1e9;
+    seen.add(key(s));
+    for (const m of order(s, pseudo(s))) {
+      const ns = make(s, m); if (inCheck(ns, s.w)) continue;
+      any = true;
+      const v = -ab(ns, depth - 1, -beta, -alpha, ply + 1, seen);
+      if (stop) { seen.delete(key(s)); return 0; }
+      if (v > best) best = v; if (v > alpha) alpha = v; if (alpha >= beta) break;
+    }
+    seen.delete(key(s));
+    if (!any) return chk ? -100000 + ply : 0;
+    return best;
+  }
+  function search(s, maxDepth, time, history) {
+    deadline = Date.now() + time; stop = false; nodes = 0;
+    let ms = order(s, legal(s)); if (!ms.length) return { move: null, scores: [] };
+    let scores = ms.map(m => [m, 0]);
+    const seen = new Set(history || []);
+    for (let d = 1; d <= maxDepth; d++) {
+      const sc = [];
+      let alpha = -1e9;
+      for (const [m] of scores) {
+        const v = -ab(make(s, m), d - 1, -1e9, -alpha, 1, seen);
+        if (stop) break;
+        sc.push([m, v]); if (v > alpha) alpha = v;
+      }
+      if (stop) break;                                   // 沒算完這一層 → 用上一層的結果
+      sc.sort((a, b) => b[1] - a[1]); scores = sc;
+      if (Math.abs(scores[0][1]) > 90000) break;
+    }
+    return { move: scores[0][0], scores, eval: scores[0][1], nodes };
+  }
+  /* 代數記譜（SAN） */
+  function san(s, m, all) {
+    const c = s.b[m.f], t = c.toLowerCase();
+    const sqn = i => "abcdefgh"[F(i)] + (8 - R(i));
+    let out;
+    if (m.k === 2) out = F(m.t) === 6 ? "O-O" : "O-O-O";
+    else {
+      const cap = s.b[m.t] !== "." || m.k === 1;
+      if (t === "p") out = (cap ? "abcdefgh"[F(m.f)] + "x" : "") + sqn(m.t) + (m.p ? "=" + m.p.toUpperCase() : "");
+      else {
+        const same = all.filter(o => o.t === m.t && o.f !== m.f && s.b[o.f] === c);
+        let dis = "";
+        if (same.length) { if (!same.some(o => F(o.f) === F(m.f))) dis = "abcdefgh"[F(m.f)]; else if (!same.some(o => R(o.f) === R(m.f))) dis = String(8 - R(m.f)); else dis = sqn(m.f); }
+        out = t.toUpperCase() + dis + (cap ? "x" : "") + sqn(m.t);
+      }
+    }
+    const ns = make(s, m);
+    if (inCheck(ns, ns.w)) out += legal(ns).length ? "+" : "#";
+    return out;
+  }
+  return { init, legal, make, inCheck, key, insufficient, search, san, evaluate };
+}
+
+const E = CHESSENGINE();
+const $ = id => document.getElementById(id);
+const svg = $("board"), NS = "http://www.w3.org/2000/svg", STORE = "chess-v1";
+const GLYPH = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
+let S = null, G = null, thinking = false, token = 0, pending = null, sel = -1, targets = [], hint = null, promoPick = null;
+function defaults() { return { mode: "ai", humanWhite: true, level: 1, flipped: false, moves: [], over: null }; }
+function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { } }
+const mstr = m => `${m.f}-${m.t}${m.p || ""}`;
+const sameMove = (a, b) => a.f === b.f && a.t === b.t && (a.p || "") === (b.p || "");
+function replay() {
+  let s = E.init(); const keys = [E.key(s)], sans = [];
+  for (const ms of S.moves) {
+    const [f, rest] = ms.split("-"), t = parseInt(rest), p = rest.replace(/^\d+/, "");
+    const lg = E.legal(s), m = lg.find(x => x.f === +f && x.t === t && (x.p || "") === p);
+    if (!m) throw new Error("illegal");
+    sans.push(E.san(s, m, lg));
+    s = E.make(s, m); keys.push(E.key(s));
+  }
+  const legalNow = E.legal(s), check = E.inCheck(s, s.w);
+  let result = null;
+  if (!legalNow.length) result = check ? { r: s.w ? "b" : "w", why: "將死" } : { r: "d", why: "逼和" };
+  else if (keys.filter(k => k === keys[keys.length - 1]).length >= 3) result = { r: "d", why: "同一局面重複三次" };
+  else if (s.h >= 100) result = { r: "d", why: "50 回合沒有吃子或動兵" };
+  else if (E.insufficient(s.b)) result = { r: "d", why: "雙方子力都不足以將死" };
+  return { s, keys, sans, legal: legalNow, check, result };
+}
+const humanTurn = () => S.mode === "local" || G.s.w === S.humanWhite;
+const aiTurn = () => S.mode === "ai" && !S.over && !humanTurn();
+const sideName = w => (w ? "白" : "黑");
+function play(m) {
+  S.moves.push(mstr(m)); sel = -1; targets = []; hint = null;
+  G = replay();
+  if (G.result) finish(G.result);
+  else if (G.check) stamp("將軍", "", true);
+  save(); render(); maybeAi();
+}
+function finish(res) {
+  S.over = res;
+  const big = res.r === "d" ? "和棋" : res.why === "將死" ? "將死" : `${res.r === "w" ? "白" : "黑"}勝`;
+  const small = res.r === "d" ? res.why : `${res.r === "w" ? "白" : "黑"}方勝` + (S.mode === "ai" ? ((res.r === "w") === S.humanWhite ? "，你贏了" : "，電腦贏了") : "");
+  stamp(big, small);
+}
+function stamp(big, small, fade) {
+  const box = $("fx"); box.innerHTML = "";
+  const d = document.createElement("div"); d.className = "stamp";
+  d.innerHTML = `<span class="big">${big}</span>` + (small ? `<span class="small">${small}</span>` : "");
+  box.appendChild(d);
+  if (fade) setTimeout(() => d.remove(), 1300);
+}
+let worker = null;
+try { worker = new Worker(URL.createObjectURL(new Blob([`const E=(${CHESSENGINE.toString()})();onmessage=e=>{const d=e.data;postMessage({id:d.id,r:E.search(d.s,d.depth,d.time,d.hist)});};`], { type: "text/javascript" }))); } catch (e) { worker = null; }
+let reqId = 0; const waiting = new Map();
+if (worker) worker.onmessage = e => { const cb = waiting.get(e.data.id); waiting.delete(e.data.id); if (cb) cb(e.data.r); };
+const LV = [{ depth: 1, time: 300, noise: 0.35 }, { depth: 3, time: 1200, noise: 0.05 }, { depth: 30, time: 3500, noise: 0 }];
+function think(L, cb) {
+  const id = ++reqId, hist = G.keys.slice(0, -1);
+  if (worker) { waiting.set(id, cb); worker.postMessage({ id, s: G.s, depth: L.depth, time: L.time, hist }); }
+  else setTimeout(() => cb(E.search(G.s, Math.min(L.depth, 3), 800, hist)), 30);
+}
+function maybeAi() {
+  if (!aiTurn()) return;
+  thinking = true; render();
+  const my = token, L = LV[S.level], t0 = Date.now();
+  think(L, r => {
+    if (my !== token) return;
+    setTimeout(() => {
+      if (my !== token) return;
+      thinking = false;
+      let m = r.move;
+      if (Math.random() < L.noise && r.scores.length > 2) { const ok = r.scores.filter(x => x[1] > r.scores[0][1] - 250); m = ok[(Math.random() * ok.length) | 0][0]; }
+      play(m);
+    }, Math.max(0, 350 - (Date.now() - t0)));
+  });
+}
+
+function el(t, a, p) { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; }
+const SQ = 64, M0 = 24;
+const view = sq => (S.flipped ? 63 - sq : sq);
+function draw() {
+  svg.innerHTML = "";
+  el("rect", { x: 0, y: 0, width: 560, height: 560, rx: 12, fill: "#3b2a1a" }, svg);
+  const last = S.moves.length ? S.moves[S.moves.length - 1].split("-").map(x => parseInt(x)) : null;
+  const ks = G.check ? G.s.b.indexOf(G.s.w ? "K" : "k") : -1;
+  for (let sq = 0; sq < 64; sq++) {
+    const v = view(sq), x = M0 + (v & 7) * SQ, y = M0 + (v >> 3) * SQ, dark = ((sq & 7) + (sq >> 3)) % 2 === 1;
+    el("rect", { x, y, width: SQ, height: SQ, fill: dark ? "#a8805a" : "#ecdcbf" }, svg);
+    if (last && (sq === last[0] || sq === last[1])) el("rect", { x, y, width: SQ, height: SQ, fill: "rgba(232, 196, 64, .45)" }, svg);
+    if (sq === sel) el("rect", { x, y, width: SQ, height: SQ, fill: "rgba(46, 122, 103, .45)" }, svg);
+    if (sq === ks) el("rect", { x, y, width: SQ, height: SQ, fill: "rgba(200, 40, 30, .5)" }, svg);
+    if (hint && (sq === hint.f || sq === hint.t)) el("rect", { x: x + 3, y: y + 3, width: SQ - 6, height: SQ - 6, fill: "none", stroke: "var(--jade)", "stroke-width": 4, "stroke-dasharray": "6 4" }, svg);
+    const c = G.s.b[sq];
+    if (c !== ".") {
+      const wt = c === c.toUpperCase();
+      el("text", { x: x + SQ / 2, y: y + SQ / 2 + 2, "font-size": 50, "text-anchor": "middle", "dominant-baseline": "central",
+        fill: wt ? "#fbf7ee" : "#151515", stroke: wt ? "#2a2a2a" : "#f0e6d0", "stroke-width": wt ? 1.6 : .7, "paint-order": "stroke",
+        "font-family": "'Segoe UI Symbol','Apple Symbols','DejaVu Sans',serif" }, svg).textContent = GLYPH[c.toLowerCase()] + "︎";
+    }
+    if (targets.some(m => m.t === sq)) {
+      if (c !== "." || targets.some(m => m.t === sq && m.k === 1)) el("circle", { cx: x + SQ / 2, cy: y + SQ / 2, r: SQ * 0.44, fill: "none", stroke: "rgba(30, 90, 70, .7)", "stroke-width": 5 }, svg);
+      else el("circle", { cx: x + SQ / 2, cy: y + SQ / 2, r: 10, fill: "rgba(30, 90, 70, .6)" }, svg);
+    }
+  }
+  const lab = el("g", { fill: "#ecdcbf", "font-size": 13, "font-family": "system-ui,sans-serif", "text-anchor": "middle", "dominant-baseline": "central" }, svg);
+  for (let k = 0; k < 8; k++) {
+    const file = S.flipped ? 7 - k : k, rank = S.flipped ? k + 1 : 8 - k;
+    el("text", { x: M0 + k * SQ + SQ / 2, y: 548 }, lab).textContent = "abcdefgh"[file];
+    el("text", { x: 12, y: M0 + k * SQ + SQ / 2 }, lab).textContent = rank;
+  }
+}
+function render() {
+  draw();
+  const pr = (s2, attr, val) => document.querySelectorAll(s2 + " button").forEach(b => b.setAttribute("aria-pressed", b.dataset[attr] === String(val)));
+  pr("#modeSeg", "mode", S.mode); pr("#sideSeg", "white", S.humanWhite ? 1 : 0); pr("#lvlSeg", "lv", S.level);
+  $("aiOpts").hidden = S.mode !== "ai";
+  let msg, sub;
+  if (S.over) { msg = S.over.r === "d" ? "和棋" : `${S.over.r === "w" ? "白" : "黑"}方勝`; sub = S.over.why; }
+  else if (thinking) { msg = "電腦思考中…"; sub = ""; }
+  else {
+    msg = S.mode === "ai" ? (humanTurn() ? `輪到你（${sideName(G.s.w)}）` : "電腦") : `輪到${sideName(G.s.w)}方`;
+    sub = hint ? hint.text : G.check ? "被將軍了，一定要解除" : `第 ${G.s.n} 回合`;
+  }
+  $("msg").textContent = msg; $("sub").textContent = sub;
+  const mv = $("moves"); let h = "";
+  for (let i = 0; i < G.sans.length; i += 2) h += `<span class="n">${i / 2 + 1}.</span><span>${G.sans[i]}</span><span>${G.sans[i + 1] || ""}</span>`;
+  mv.innerHTML = h || '<span class="n"></span><span style="color:var(--muted);grid-column:2/4">還沒有棋步</span>'; mv.scrollTop = mv.scrollHeight;
+  $("btnUndo").disabled = !S.moves.length;
+  $("btnGiveUp").disabled = $("btnDraw").disabled = !!S.over || !S.moves.length;
+  $("btnHint").disabled = !!S.over || thinking || !humanTurn();
+}
+function sqAt(evt) {
+  const pt = svg.createSVGPoint(); pt.x = evt.clientX; pt.y = evt.clientY;
+  const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+  const f = Math.floor((p.x - M0) / SQ), r = Math.floor((p.y - M0) / SQ);
+  if (f < 0 || r < 0 || f > 7 || r > 7) return -1;
+  return view(r * 8 + f);
+}
+svg.addEventListener("click", evt => {
+  if (S.over || thinking || !humanTurn() || !$("promo").hidden) return;
+  const sq = sqAt(evt); if (sq < 0) return;
+  const ms = targets.filter(m => m.t === sq);
+  if (ms.length) {
+    if (ms.length > 1) { askPromo(ms); return; }
+    play(ms[0]); return;
+  }
+  const c = G.s.b[sq];
+  if (c !== "." && (c === c.toUpperCase()) === G.s.w) { sel = sel === sq ? -1 : sq; targets = sel < 0 ? [] : G.legal.filter(m => m.f === sq); }
+  else { sel = -1; targets = []; }
+  hint = null; render();
+});
+function askPromo(ms) {
+  const box = $("promoOpts"); box.innerHTML = "";
+  for (const p of "qrbn") {
+    const b = document.createElement("button");
+    b.textContent = GLYPH[p] + "︎"; b.style.color = G.s.w ? "#8a8a8a" : "#151515";
+    b.onclick = () => { $("promo").hidden = true; play(ms.find(m => m.p === p)); };
+    box.appendChild(b);
+  }
+  $("promo").hidden = false;
+}
+$("promoCancel").onclick = () => { $("promo").hidden = true; };
+function ask(text, yes) { pending = yes; $("confirmText").textContent = text; $("confirm").hidden = false; }
+$("confirmYes").onclick = () => { $("confirm").hidden = true; const f = pending; pending = null; if (f) f(); };
+$("confirmNo").onclick = () => { $("confirm").hidden = true; pending = null; };
+function newGame() { token++; thinking = false; sel = -1; targets = []; hint = null; S.moves = []; S.over = null; S.flipped = S.mode === "ai" && !S.humanWhite; $("fx").innerHTML = ""; G = replay(); save(); render(); maybeAi(); }
+$("btnNew").onclick = () => (S.moves.length && !S.over ? ask("放棄這盤、重新開始？", newGame) : newGame());
+$("btnUndo").onclick = () => {
+  if (!S.moves.length) return;
+  token++; thinking = false; sel = -1; targets = []; hint = null; $("fx").innerHTML = "";
+  if (S.over) { const res = S.over.resign || S.over.agreed; S.over = null; if (res) { G = replay(); save(); render(); return; } }
+  S.moves.pop(); G = replay();
+  if (S.mode === "ai") while (S.moves.length && !humanTurn()) { S.moves.pop(); G = replay(); }
+  save(); render(); maybeAi();
+};
+$("btnFlip").onclick = () => { S.flipped = !S.flipped; save(); render(); };
+$("btnGiveUp").onclick = () => ask("認輸這盤？", () => {
+  token++; thinking = false;
+  const loserW = S.mode === "ai" ? S.humanWhite : G.s.w;
+  S.over = { r: loserW ? "b" : "w", why: `${sideName(loserW)}方認輸`, resign: true };
+  stamp(`${loserW ? "黑" : "白"}勝`, `${sideName(loserW)}方認輸`); save(); render();
+});
+$("btnDraw").onclick = () => {
+  if (S.over) return;
+  if (S.mode === "local") { ask(`${sideName(!G.s.w)}方，你同意和棋嗎？`, () => { S.over = { r: "d", why: "雙方同意和棋", agreed: true }; stamp("和棋", "雙方同意"); save(); render(); }); return; }
+  thinking = true; render();
+  const my = token;
+  think({ depth: 3, time: 900 }, r => {
+    if (my !== token) return;
+    thinking = false;
+    if (r.eval <= 30) { S.over = { r: "d", why: "電腦同意和棋", agreed: true }; stamp("和棋", "電腦同意"); save(); render(); }
+    else { render(); $("sub").textContent = "電腦覺得自己比較好，不同意和棋"; }
+  });
+};
+$("btnHint").onclick = () => {
+  if (thinking || S.over || !humanTurn()) return;
+  thinking = true; render();
+  const my = token;
+  think({ depth: 30, time: 1500 }, r => {
+    if (my !== token) return;
+    thinking = false;
+    hint = { f: r.move.f, t: r.move.t, text: `提示：${E.san(G.s, r.move, G.legal)}` };
+    render();
+  });
+};
+const bind = (s2, f) => document.querySelectorAll(s2 + " button").forEach(b => b.onclick = () => f(b.dataset));
+bind("#modeSeg", d => { if (d.mode === S.mode) return; S.mode = d.mode; token++; thinking = false; save(); render(); maybeAi(); });
+bind("#sideSeg", d => { const f = d.white === "1"; if (f === S.humanWhite) return; S.humanWhite = f; S.flipped = !f; token++; thinking = false; save(); render(); maybeAi(); });
+bind("#lvlSeg", d => { S.level = +d.lv; save(); render(); });
+(function init() {
+  let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
+  S = Object.assign(defaults(), st || {});
+  try { G = replay(); } catch (e) { S.moves = []; S.over = null; G = replay(); }
+  render(); if (!S.over) maybeAi();
+})();
+</script>

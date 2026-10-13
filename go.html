@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="象棋"><meta name="theme-color" content="#131917"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon.png"><link rel="icon" href="icon.png"><style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style><script>if('serviceWorker' in navigator&&(location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname)))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))</script><title>黑白縱橫</title>
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="棋盤小館"><meta name="theme-color" content="#131917"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon.png"><link rel="icon" href="icon.png"><style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style><script>if('serviceWorker' in navigator&&(location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname)))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))</script><title>黑白縱橫</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Sans+TC:wght@400;500;700&display=swap">
@@ -89,13 +89,16 @@
     display: flex; flex-wrap: wrap; gap: 4px 10px; font-variant-numeric: tabular-nums; }
   .moves span { white-space: nowrap; } .moves span.last { text-decoration: underline; text-decoration-color: var(--jade); text-underline-offset: 4px; }
   .empty { color: var(--muted); font-size: 13px; }
+  details.rules { border-top: 1px solid var(--rule); padding-top: 10px; font-size: 14px; }
+  details.rules summary { cursor: pointer; font-weight: 700; }
+  details.rules li { margin: 4px 0; } details.rules ul { padding-left: 1.2em; margin: 8px 0; }
 </style>
 
 <div class="wrap">
   <header class="top">
     <h1>黑白縱橫</h1>
     <p>圍棋：兩個人同一個畫面輪流下，或跟電腦下，可以讓子。中國規則數子，黑貼 7.5（讓子棋貼 0.5）。</p>
-    <nav class="switch" id="switch" aria-label="切換遊戲"><a href="./">象棋</a><a href="go.html" aria-current="page">圍棋</a></nav>
+    <nav class="switch" id="switch" aria-label="回到棋類首頁"><a href="./">← 全部棋類</a></nav>
   </header>
 
   <div class="boardcol">
@@ -179,6 +182,18 @@
       <span class="label">棋步</span>
       <div class="moves" id="moves"><div class="empty">還沒有棋步。黑先，常見第一步下在星位（棋盤上的小黑點）。</div></div>
     </div>
+    <details class="rules"><summary>玩法說明</summary>
+      <ul>
+        <li>黑先，雙方輪流在交叉點下一顆棋子，下了就不能移動。</li>
+        <li><b>氣與提子</b>：棋子上下左右相鄰的空點叫「氣」；連在一起的同色棋子共用氣。一塊棋的氣全被對方堵住就被提走（拿掉）。</li>
+        <li><b>禁著點</b>：不能下在下完自己沒有氣、而且也提不掉對方棋子的地方。</li>
+        <li><b>打劫</b>：剛被提掉一顆子時，不能馬上在原處提回來造成同一個局面；要先在別處下一手（找劫材）。本遊戲禁止任何會重複先前局面的下法（全局同形禁止）。</li>
+        <li><b>虛手</b>：可以不下（停一手）。雙方連續虛手就結束，進入數子。</li>
+        <li><b>數子（中國規則）</b>：先把雙方同意的死子拿掉，然後每一方「自己的棋子＋只被自己圍住的空點」就是自己的子數。黑方要貼 7.5 目給白方（讓子棋只貼 0.5）。誰多誰贏。</li>
+        <li><b>讓子</b>：程度差的一方執黑，先在星位擺好讓子，白先下。</li>
+        <li><b>形勢判斷</b>會估計目前誰領先、大概哪些是誰的地；<b>提示</b>會標出電腦建議的位置。</li>
+      </ul>
+    </details>
   </aside>
 </div>
 

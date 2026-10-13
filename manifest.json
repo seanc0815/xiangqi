@@ -1,6 +1,6 @@
 {
-  "name": "楚河漢界",
-  "short_name": "象棋",
+  "name": "棋盤小館",
+  "short_name": "棋盤小館",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
