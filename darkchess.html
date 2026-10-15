@@ -67,7 +67,8 @@
     <div class="status" aria-live="polite"><div class="msg" id="msg"></div><div class="sub" id="sub"></div></div>
     <div class="group"><span class="label">被吃掉的子</span><div class="caps" id="capsR"></div><div class="caps" id="capsK"></div></div>
     <div class="group"><span class="label">玩法</span>
-      <div class="seg" id="modeSeg"><button data-mode="local">雙人同機</button><button data-mode="ai">對電腦</button></div></div>
+      <div class="seg" id="modeSeg"><button data-mode="local">雙人同機</button><button data-mode="ai">對電腦</button><button data-mode="online">連線對戰</button></div></div>
+    <div class="group" id="netBox" hidden></div>
     <div class="group" id="aiOpts"><span class="label">誰先翻</span>
       <div class="seg" id="sideSeg"><button data-first="1">我先</button><button data-first="0">電腦先</button></div>
       <span class="label" style="margin-top:6px">電腦棋力</span>
@@ -91,7 +92,9 @@
   </aside>
 </div>
 
+<script src="net.js"></script>
 <script>
+let NETP = null;
 /* ───────── 規則與電腦 ─────────
    格子 0..31（4 列 × 8 行，i = r*8+c）。棋子字串：顏色 R/K + 等級 1..7（7 帥將、6 仕士、5 相象、4 俥車、3 傌馬、2 炮包、1 兵卒）
    盤面 cell：null 空；{p:"R7", up:false} */
@@ -227,8 +230,9 @@ function replay() {
   }
   return { st, turn, colorOf, color, caps, result };
 }
-const isHuman = t => S.mode === "local" || (t === 0) === S.humanFirst;
-const humanTurn = () => isHuman(G.turn);
+const isHuman = t => S.mode === "online" ? !!(NETP && NETP.mySeat() === t) : (S.mode === "local" || (t === 0) === S.humanFirst);
+const humanTurn = () => S.mode === "online" ? !!(NETP && NETP.myTurn()) : isHuman(G.turn);
+const NETP_turnSeat = () => (G.turn);
 const aiTurn = () => S.mode === "ai" && !S.over && !humanTurn();
 const sideLabel = t => {
   const c = G.colorOf[t];
@@ -238,6 +242,7 @@ const sideLabel = t => {
 function act(mv) {
   S.moves.push(mv); sel = -1; G = replay();
   if (G.result) finish(G.result);
+  if (S.mode === "online" && NETP) NETP.push();
   save(); render(); maybeAi();
 }
 function finish(res) {
@@ -305,7 +310,8 @@ function draw() {
     }
   }
 }
-function render() {
+function render() { render0(); if (typeof onlineOverlay === "function" && NETP) onlineOverlay(); }
+function render0() {
   draw();
   const pr = (s2, attr, val) => document.querySelectorAll(s2 + " button").forEach(b => b.setAttribute("aria-pressed", b.dataset[attr] === String(val)));
   pr("#modeSeg", "mode", S.mode); pr("#sideSeg", "first", S.humanFirst ? 1 : 0); pr("#lvlSeg", "lv", S.level);
@@ -359,9 +365,66 @@ $("btnGiveUp").onclick = () => ask("認輸這盤？", () => {
   stamp(`${sideLabel(1 - loser).replace(/^.*（(.)）$/, "$1")}勝`, `${sideLabel(loser)}認輸`); save(); render();
 });
 const bind = (s2, f) => document.querySelectorAll(s2 + " button").forEach(b => b.onclick = () => f(b.dataset));
-bind("#modeSeg", d => { if (d.mode === S.mode) return; S.mode = d.mode; token++; thinking = false; save(); render(); maybeAi(); });
+bind("#modeSeg", d => { if (d.mode === S.mode) return; if (S.mode === "online" && NETP && NETP.active()) NETP.leave(); S.mode = d.mode; token++; thinking = false; save(); render(); maybeAi(); });
 bind("#sideSeg", d => { const f = d.first === "1"; if (f === S.humanFirst) return; const go = () => { S.humanFirst = f; newGame(); }; S.moves.length && !S.over ? ask("換先後手會重新洗牌，確定？", go) : go(); });
 bind("#lvlSeg", d => { S.level = +d.lv; save(); render(); });
+
+/* ───────── 連線對戰（net.js，兩支手機直接連線） ───────── */
+function onlineUndoFor(seat) {
+  const keep = S.moves.slice(); let mv = S.moves.slice();
+  do { mv.pop(); S.moves = mv.slice(); G = replay(); } while (mv.length && NETP_turnSeat() !== seat);
+  S.moves = keep; G = replay();
+  return mv;
+}
+function onlineApply(st, remote) {
+  const was = !!S.over;
+  if (st.cfg && Array.isArray(st.cfg.deal) && st.cfg.deal.length === 32) S.deal = st.cfg.deal;
+  S.moves = (st.moves || []).slice(); S.over = null; sel = -1;
+  G = replay();
+  if (st.over) {
+    if (!was) { finish(st.over); }
+    if (!was && st.over.resign) {                       // 認輸：小字改成誰認輸
+      const box = document.querySelector("#fx .stamp");
+      if (box) { let sm = box.querySelector(".small"); if (!sm) { sm = document.createElement("span"); sm.className = "small"; box.appendChild(sm); } sm.textContent = remote ? "對方認輸" : "你認輸"; }
+    }
+    S.over = st.over;
+  } else $("fx").innerHTML = "";
+  save(); render();
+}
+NETP = NetPlay.widget({
+  game: "darkchess", el: $("netBox"), sides: ["先手", "後手"],
+  adapter: {
+    getState: () => ({ moves: S.moves.slice(), over: S.over || null, cfg: { deal: S.deal } }),
+    setState: onlineApply,
+    turnSeat: () => NETP_turnSeat(),
+    undoFor: onlineUndoFor,
+    newCfg: () => ({ deal: E.newDeal(Math.random) }),
+    resignOver: seat => ({ w: 1 - seat, why: `${seat === 0 ? "先手" : "後手"}認輸`, resign: true }),
+    
+    onEnter(seat) { S.mode = "online"; token++; thinking = false;  save(); render(); },
+    onLeave() { S.mode = "local"; S.moves = []; S.over = null; $("fx").innerHTML = ""; G = replay(); save(); render(); },
+  },
+  onWantOnline() { S.mode = "online"; render(); },
+  onRender() { onlineOverlay(); },
+});
+function onlineOverlay() {
+  const on = S.mode === "online";
+  $("netBox").hidden = !on;
+  if (!on) return;
+  $("aiOpts").hidden = true;
+  const act = NETP && NETP.active();
+  if (!S.over) $("msg").textContent = !act ? "連線對戰：開房間，或輸入對方的房號" : !NETP.connected() ? "等對手連線…" : NETP.myTurn() ? "輪到你" : "等對手下…";
+  $("btnUndo").disabled = !act || !S.moves.length || !!S.over;
+  $("btnGiveUp").disabled = !act || !!S.over || !S.moves.length;
+  
+}
+{
+  const offNew = $("btnNew").onclick, offUndo = $("btnUndo").onclick, offGive = $("btnGiveUp").onclick;
+  $("btnNew").onclick = () => S.mode === "online" ? (NETP.active() && ask("跟對方要求重新開一盤？", () => NETP.request("new"))) : offNew();
+  $("btnUndo").onclick = () => S.mode === "online" ? (NETP.active() && S.moves.length && NETP.request("undo")) : offUndo();
+  $("btnGiveUp").onclick = () => S.mode === "online" ? (NETP.active() && ask("認輸這盤？", () => NETP.resign())) : offGive();
+  
+}
 (function init() {
   let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
   S = Object.assign(defaults(), st || {});

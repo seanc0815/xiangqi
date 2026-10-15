@@ -63,7 +63,8 @@
     <div class="status" aria-live="polite"><div class="msg" id="msg"></div><div class="sub" id="sub"></div></div>
     <div class="score" id="score"></div>
     <div class="group"><span class="label">玩法</span>
-      <div class="seg" id="modeSeg"><button data-mode="local">雙人同機</button><button data-mode="ai">對電腦</button></div></div>
+      <div class="seg" id="modeSeg"><button data-mode="local">雙人同機</button><button data-mode="ai">對電腦</button><button data-mode="online">連線對戰</button></div></div>
+    <div class="group" id="netBox" hidden></div>
     <div class="group"><span class="label">規則</span>
       <div class="seg" id="ruleSeg"><button data-r="free">一般（無禁手）</button><button data-r="renju">黑棋禁手</button></div></div>
     <div class="group" id="aiOpts"><span class="label">我執</span>
@@ -92,7 +93,9 @@
   </aside>
 </div>
 
+<script src="net.js"></script>
 <script>
+let NETP = null;
 /* ───────── 規則與電腦 ───────── */
 function GOMOKUENGINE() {
   const N = 15, D = [[1, 0], [0, 1], [1, 1], [1, -1]];
@@ -280,11 +283,13 @@ function winLine(b, i, p) {
   }
   return null;
 }
-const humanTurn = () => S.mode === "local" || (G.turn === 1) === S.humanBlack;
+const humanTurn = () => S.mode === "online" ? !!(NETP && NETP.myTurn()) : (S.mode === "local" || (G.turn === 1) === S.humanBlack);
+const NETP_turnSeat = () => (G.turn === 1 ? 0 : 1);
 const aiTurn = () => S.mode === "ai" && !S.over && !humanTurn();
 function play(m) {
   S.moves.push(m); ghost = -1; G = replay();
   if (G.result) finish(G.result);
+  if (S.mode === "online" && NETP) NETP.push();
   save(); render(); maybeAi();
 }
 function finish(r) {
@@ -334,7 +339,8 @@ function draw() {
   if (G.line) { const [[a, b2], [c, d]] = G.line; el("line", { x1: M + a * C, y1: M + b2 * C, x2: M + c * C, y2: M + d * C, stroke: "var(--accent)", "stroke-width": 5, "stroke-linecap": "round", opacity: .8 }, svg); }
   if (ghost >= 0) el("circle", { cx: M + (ghost % N) * C, cy: M + ((ghost / N) | 0) * C, r, fill: G.turn === 1 ? "url(#gb)" : "url(#gw)", opacity: .5, stroke: "var(--accent)", "stroke-width": 1.5 }, svg);
 }
-function render() {
+function render() { render0(); if (typeof onlineOverlay === "function" && NETP) onlineOverlay(); }
+function render0() {
   draw();
   const pr = (sel, attr, val) => document.querySelectorAll(sel + " button").forEach(b => b.setAttribute("aria-pressed", b.dataset[attr] === String(val)));
   pr("#modeSeg", "mode", S.mode); pr("#ruleSeg", "r", S.rule); pr("#sideSeg", "black", S.humanBlack ? 1 : 0); pr("#lvlSeg", "lv", S.level); pr("#tapSeg", "two", S.two ? 1 : 0);
@@ -383,11 +389,68 @@ $("btnGiveUp").onclick = () => ask("認輸這盤？", () => {
   stamp(`${name(w)}勝`, `${name(loser)}認輸`); save(); render();
 });
 const bind = (sel, f) => document.querySelectorAll(sel + " button").forEach(b => b.onclick = () => f(b.dataset));
-bind("#modeSeg", d => { if (d.mode === S.mode) return; S.mode = d.mode; token++; thinking = false; save(); render(); maybeAi(); });
+bind("#modeSeg", d => { if (d.mode === S.mode) return; if (S.mode === "online" && NETP && NETP.active()) NETP.leave(); S.mode = d.mode; token++; thinking = false; save(); render(); maybeAi(); });
 bind("#ruleSeg", d => { if (d.r === S.rule) return; const go = () => { S.rule = d.r; newGame(); }; S.moves.length && !S.over ? ask("換規則會重新開始，確定？", go) : go(); });
 bind("#sideSeg", d => { const f = d.black === "1"; if (f === S.humanBlack) return; S.humanBlack = f; token++; thinking = false; save(); render(); maybeAi(); });
 bind("#lvlSeg", d => { S.level = +d.lv; save(); render(); });
 bind("#tapSeg", d => { S.two = d.two === "1"; ghost = -1; save(); render(); });
+
+/* ───────── 連線對戰（net.js，兩支手機直接連線） ───────── */
+function onlineUndoFor(seat) {
+  const keep = S.moves.slice(); let mv = S.moves.slice();
+  do { mv.pop(); S.moves = mv.slice(); G = replay(); } while (mv.length && NETP_turnSeat() !== seat);
+  S.moves = keep; G = replay();
+  return mv;
+}
+function onlineApply(st, remote) {
+  const was = !!S.over;
+  if (st.cfg && st.cfg.rule) S.rule = st.cfg.rule;
+  S.moves = (st.moves || []).slice(); S.over = null; ghost = -1;
+  G = replay();
+  if (st.over) {
+    if (!was) { finish(st.over.r); }
+    if (!was && st.over.resign) {                       // 認輸：小字改成誰認輸
+      const box = document.querySelector("#fx .stamp");
+      if (box) { let sm = box.querySelector(".small"); if (!sm) { sm = document.createElement("span"); sm.className = "small"; box.appendChild(sm); } sm.textContent = remote ? "對方認輸" : "你認輸"; }
+    }
+    S.over = st.over;
+  } else $("fx").innerHTML = "";
+  save(); render();
+}
+NETP = NetPlay.widget({
+  game: "gomoku", el: $("netBox"), sides: ["黑（先下）", "白"],
+  adapter: {
+    getState: () => ({ moves: S.moves.slice(), over: S.over || null, cfg: { rule: S.rule } }),
+    setState: onlineApply,
+    turnSeat: () => NETP_turnSeat(),
+    undoFor: onlineUndoFor,
+    newCfg: () => ({ rule: S.rule }),
+    resignOver: seat => ({ r: seat === 0 ? 2 : 1, resign: true }),
+    
+    onEnter(seat) { S.mode = "online"; token++; thinking = false;  save(); render(); },
+    onLeave() { S.mode = "local"; S.moves = []; S.over = null; $("fx").innerHTML = ""; G = replay(); save(); render(); },
+  },
+  onWantOnline() { S.mode = "online"; render(); },
+  onRender() { onlineOverlay(); },
+});
+function onlineOverlay() {
+  const on = S.mode === "online";
+  $("netBox").hidden = !on;
+  if (!on) return;
+  $("aiOpts").hidden = true;
+  const act = NETP && NETP.active();
+  if (!S.over) $("msg").textContent = !act ? "連線對戰：開房間，或輸入對方的房號" : !NETP.connected() ? "等對手連線…" : NETP.myTurn() ? "輪到你" : "等對手下…";
+  $("btnUndo").disabled = !act || !S.moves.length || !!S.over;
+  $("btnGiveUp").disabled = !act || !!S.over || !S.moves.length;
+  
+}
+{
+  const offNew = $("btnNew").onclick, offUndo = $("btnUndo").onclick, offGive = $("btnGiveUp").onclick;
+  $("btnNew").onclick = () => S.mode === "online" ? (NETP.active() && ask("跟對方要求重新開一盤？", () => NETP.request("new"))) : offNew();
+  $("btnUndo").onclick = () => S.mode === "online" ? (NETP.active() && S.moves.length && NETP.request("undo")) : offUndo();
+  $("btnGiveUp").onclick = () => S.mode === "online" ? (NETP.active() && ask("認輸這盤？", () => NETP.resign())) : offGive();
+  
+}
 (function init() {
   let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
   S = Object.assign(defaults(), st || {});

@@ -121,8 +121,10 @@
       <div class="seg" id="modeSeg">
         <button data-mode="local" aria-pressed="true">雙人同機</button>
         <button data-mode="ai" aria-pressed="false">對電腦</button>
+        <button data-mode="online" aria-pressed="false">連線對戰</button>
       </div>
     </div>
+    <div class="group" id="netBox" hidden></div>
 
     <div class="group">
       <span class="label">棋盤</span>
@@ -197,7 +199,9 @@
   </aside>
 </div>
 
+<script src="net.js"></script>
 <script>
+let NETP = null;
 /* ───────── 規則與電腦（同一份程式碼也丟進背景執行緒） ─────────
    盤面：(n+2)² 的一維陣列，外框 3；0 空、1 黑、2 白。
    規則：提子、禁止自殺、單劫（引擎內）＋ 全局同形禁止（畫面那邊用歷史局面檢查，電腦的第一步也排除）。
@@ -490,6 +494,7 @@ function rebuild() { G = replay(S.n, S.moves); }
 function commit(m) {
   S.moves.push(m); ghost = -1; hint = null; overlay = null;
   rebuild(); save();
+  if (S.mode === "online" && NETP) NETP.push();
   if (G.passes >= 2) startScoring();
   render();
   if (G.passes < 2) maybeAi();
@@ -603,6 +608,7 @@ function finishScoring() {
   const sc = areaScore(scoring.dead);
   S.over = { winner: sc.diff > 0 ? 1 : 2, how: "score", text: resultText(sc), dead: [...scoring.dead] };
   scoring = null; save(); render(); announceOver();
+  if (S.mode === "online" && NETP) NETP.push();
 }
 
 /* ───────── 印章 ───────── */
@@ -714,7 +720,8 @@ function renderMoves() {
   box.innerHTML = G.list.map((h, k) => `<span class="${k === G.list.length - 1 ? "last" : ""}">${k + 1}. ${colName(h.col)} ${label(G.n, h.m)}</span>`).join("");
   box.scrollTop = box.scrollHeight;
 }
-function render() {
+function render() { render0(); if (typeof onlineOverlay === "function" && NETP) onlineOverlay(); }
+function render0() {
   drawBoard(); trays(); renderMoves();
   const pressed = (sel, attr, val) => document.querySelectorAll(sel + " button").forEach(b => b.setAttribute("aria-pressed", b.dataset[attr] === String(val)));
   const hcOpts = [0, ...Array.from({ length: maxHandicap(S.n) - 1 }, (_, k) => k + 2)];
@@ -769,6 +776,7 @@ svg.addEventListener("click", evt => {
     render(); return;
   }
   if (S.over || thinking || aiTurn()) return;
+  if (S.mode === "online" && !(NETP && NETP.myTurn())) return;
   if (cells(G.b)[i]) return;
   const why = tryMove(i);
   if (why) { ghost = -1; hint = null; overlay = null; render(); $("sub").textContent = why; return; }
@@ -799,6 +807,7 @@ document.querySelectorAll("#sizeSeg button").forEach(b => b.onclick = () => {
 });
 document.querySelectorAll("#modeSeg button").forEach(b => b.onclick = () => {
   if (b.dataset.mode === S.mode) return;
+  if (S.mode === "online" && NETP && NETP.active()) NETP.leave();
   S.mode = b.dataset.mode; token++; thinking = false; save(); render(); maybeAi();
 });
 document.querySelectorAll("#sideSeg button").forEach(b => b.onclick = () => {
@@ -819,7 +828,7 @@ $("btnUndo").onclick = () => {
   } else S.moves.pop();
   rebuild(); save(); render();
 };
-$("btnPass").onclick = () => { if (!S.over && !scoring && !thinking && !aiTurn()) commit(-1); };
+$("btnPass").onclick = () => { if (!S.over && !scoring && !thinking && !aiTurn() && (S.mode !== "online" || (NETP && NETP.myTurn()))) commit(-1); };
 $("btnGiveUp").onclick = () => {
   if (S.over || scoring) return;
   const loser = S.mode === "ai" ? (S.humanBlack ? 1 : 2) : G.col;
@@ -853,11 +862,67 @@ $("btnEval").onclick = () => {
   });
 };
 $("btnScoreOk").onclick = () => { if (scoring && !scoring.busy) finishScoring(); };
-$("btnScoreBack").onclick = () => { if (!scoring) return; token++; scoring = null; S.moves.pop(); rebuild(); save(); render(); maybeAi(); };
+$("btnScoreBack").onclick = () => { if (!scoring) return; token++; scoring = null; S.moves.pop(); rebuild(); save(); if (S.mode === "online" && NETP) NETP.push(); render(); maybeAi(); };
 
 /* 在 claude.ai 裡（只有象棋那份）不顯示切換 */
 if (/claude/.test(location.hostname)) $("switch").hidden = true;
 
+
+/* ───────── 連線對戰（net.js，兩支手機直接連線） ─────────
+   數子：最後虛手的那一方（雙方連續虛手的第二手）負責判斷死活、按確認；對方看結果，不同意可以要求悔棋。 */
+const NETP_turnSeat = () => (G.col === 1 ? 0 : 1);
+function onlineApply(st, remote) {
+  const was = !!S.over;
+  if (st.cfg) { if ([9, 13, 19].includes(st.cfg.n)) S.n = st.cfg.n; S.handicap = st.cfg.handicap || 0; }
+  token++; thinking = false; ghost = -1; hint = null; overlay = null;
+  if (remote) scoring = null;
+  S.moves = (st.moves || []).slice(); S.over = st.over || null;
+  rebuild(); save();
+  if (S.over && !was) announceOver();
+  if (!S.over) $("fx").innerHTML = "";
+  render();
+}
+NETP = NetPlay.widget({
+  game: "go", el: $("netBox"), sides: ["黑（先下）", "白"],
+  adapter: {
+    getState: () => ({ moves: S.moves.slice(), over: S.over || null, cfg: { n: S.n, handicap: S.handicap || 0 } }),
+    setState: onlineApply,
+    turnSeat: () => NETP_turnSeat(),
+    undoFor(seat) {
+      const keep = S.moves.slice(); let mv = S.moves.slice();
+      do { mv.pop(); S.moves = mv.slice(); rebuild(); } while (mv.length && NETP_turnSeat() !== seat);
+      S.moves = keep; rebuild();
+      return mv;
+    },
+    newCfg: () => ({ n: S.n, handicap: S.handicap || 0 }),
+    resignOver: seat => ({ winner: seat === 0 ? 2 : 1, how: "resign", text: `${seat === 0 ? "黑" : "白"}方認輸` }),
+    onEnter(seat) { S.mode = "online"; token++; thinking = false; scoring = null; save(); render(); },
+    onLeave() { S.mode = "local"; S.moves = []; S.over = null; scoring = null; $("fx").innerHTML = ""; rebuild(); save(); render(); },
+  },
+  onWantOnline() { S.mode = "online"; render(); },
+  onRender() { onlineOverlay(); },
+});
+function onlineOverlay() {
+  const on = S.mode === "online";
+  $("netBox").hidden = !on;
+  if (!on) return;
+  $("aiOpts").hidden = true;
+  const act = NETP && NETP.active(), inRoom = act;
+  document.querySelectorAll("#sizeSeg button, #hcSeg button").forEach(b => b.disabled = inRoom);      // 房間裡不能改棋盤／讓子（開房時決定）
+  $("btnHint").disabled = true; $("btnEval").disabled = true;                                        // 連線時不給提示、形勢判斷
+  $("btnUndo").disabled = !act || !S.moves.length || !!S.over;
+  $("btnGiveUp").disabled = !act || !!S.over || !S.moves.length;
+  if (S.over) return;
+  if (G.passes >= 2 && !scoring) { $("msg").textContent = "數子中"; $("sub").textContent = "對方正在確認死子，等一下會出結果；不同意可以要求悔棋"; return; }
+  if (scoring) return;
+  $("msg").textContent = !act ? "連線對戰：開房間，或輸入對方的房號" : !NETP.connected() ? "等對手連線…" : NETP.myTurn() ? `輪到你（${G.col === 1 ? "黑" : "白"}）` : "等對手下…";
+}
+{
+  const offNew = $("btnNew").onclick, offUndo = $("btnUndo").onclick, offGive = $("btnGiveUp").onclick;
+  $("btnNew").onclick = () => S.mode === "online" ? (NETP.active() && ask("跟對方要求重新開一盤？", () => NETP.request("new"))) : offNew();
+  $("btnUndo").onclick = () => S.mode === "online" ? (NETP.active() && S.moves.length && NETP.request("undo")) : offUndo();
+  $("btnGiveUp").onclick = () => S.mode === "online" ? (NETP.active() && ask("認輸這盤？", () => NETP.resign())) : offGive();
+}
 (function init() {
   let st = null;
   try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { st = null; }

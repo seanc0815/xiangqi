@@ -250,6 +250,7 @@
   </aside>
 </div>
 
+<script src="net.js"></script>
 <script>
 /* ───────────────────────── 規則與電腦（主畫面與背景運算共用同一份） ───────────────────────── */
 function ENGINE() {
@@ -895,7 +896,22 @@ const newCode = () => Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math
 const gameRef = code => NET.db.doc("games/" + code);
 
 async function connectNet() {
-  if (!window.claude || !window.claude.use) { NET.note = "這個網頁要從 claude.ai 開啟才能連線對戰。"; renderOnline(); return; }
+  if (!window.claude || !window.claude.use) {
+    //  2026-10-13：不在 claude.ai 上 → 兩支手機直接連線（net.js 提供跟共用資料庫一樣的介面）
+    if (window.NetPlay) {
+      NET.db = window.NetPlay.db("xiangqi"); NET.me = window.NetPlay.me(); NET.note = ""; NET.p2p = true;
+      renderOnline();
+      if (S.mode === "online" && S.online) watch(S.online.code);
+      const want = new URLSearchParams(location.search).get("room");          // 邀請連結 ?room=XXXX
+      if (want && (!S.online || S.online.code !== want.toUpperCase())) {
+        try { history.replaceState(null, "", location.pathname); } catch (e) { }
+        if (S.mode !== "online") switchMode("online");
+        $("joinCode").value = want.toUpperCase(); joinRoom();
+      }
+      return;
+    }
+    NET.note = "這個網頁要從 claude.ai 開啟才能連線對戰。"; renderOnline(); return;
+  }
   try {
     const [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
     NET.db = db;
@@ -987,6 +1003,7 @@ function enterRoom(code, red, moves) {
 }
 function leaveRoom() {
   if (NET.unsub) { NET.unsub(); NET.unsub = null; }
+  if (NET.db && NET.db.leave && S.online) NET.db.leave(S.online.code);      // 點對點：關掉連線
   NET.game = null; S.online = null; S.moves = []; S.result = null; S.flipped = false;
   save(); drawBoard(); rebuild();
 }
@@ -1144,7 +1161,9 @@ $("btnRematch").onclick = () => {
 };
 $("btnCopy").onclick = async () => {
   const code = S.online && S.online.code; if (!code) return;
-  try { await navigator.clipboard.writeText(code); $("roomNote").textContent = "已複製房號。"; }
+  let txt = code;
+  if (NET.p2p) { const u = new URL(location.href); u.searchParams.set("room", code); txt = u.toString(); }   // 點對點：複製邀請連結
+  try { await navigator.clipboard.writeText(txt); $("roomNote").textContent = NET.p2p ? "邀請連結已複製，貼給對手就好。" : "已複製房號。"; }
   catch (e) { const r = document.createRange(); r.selectNodeContents($("roomCode")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); $("roomNote").textContent = "已選取房號，請手動複製。"; }
 };
 
@@ -1156,8 +1175,8 @@ function start(data) {
   if (!st) { try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { st = null; } }
   S = Object.assign(defaults(), st || {});
   if (!Array.isArray(S.moves)) S.moves = [];
-  //  不在 claude.ai 上（自己架的網站、儀表板 /xiangqi）沒有共用資料庫 → 連線對戰整個藏起來
-  if (!(window.claude && window.claude.use)) {
+  //  不在 claude.ai 上、也載不到 net.js → 連線對戰整個藏起來（有 net.js 就用兩支手機直接連線）
+  if (!(window.claude && window.claude.use) && !window.NetPlay) {
     document.querySelector('#modeSeg button[data-mode="online"]').hidden = true;
     if (S.mode === "online") { S.mode = "local"; S.moves = []; S.online = null; S.result = null; S.flipped = false; }
   }

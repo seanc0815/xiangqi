@@ -70,7 +70,8 @@
   <aside class="panel">
     <div class="status" aria-live="polite"><div class="msg" id="msg"></div><div class="sub" id="sub"></div></div>
     <div class="group"><span class="label">玩法</span>
-      <div class="seg" id="modeSeg"><button data-mode="local">雙人同機</button><button data-mode="ai">對電腦</button></div></div>
+      <div class="seg" id="modeSeg"><button data-mode="local">雙人同機</button><button data-mode="ai">對電腦</button><button data-mode="online">連線對戰</button></div></div>
+    <div class="group" id="netBox" hidden></div>
     <div class="group" id="aiOpts"><span class="label">我執</span>
       <div class="seg" id="sideSeg"><button data-white="1">白（先走）</button><button data-white="0">黑</button></div>
       <span class="label" style="margin-top:6px">電腦棋力</span>
@@ -96,7 +97,9 @@
   </aside>
 </div>
 
+<script src="net.js"></script>
 <script>
+let NETP = null;
 /* ───────── 規則與電腦 ─────────
    盤面 64 格，0＝a8 … 63＝h1（上面是第 8 橫列）；大寫白、小寫黑、"." 空。
    狀態 {b, w（輪到白）, c（入堡權 "KQkq"）, ep（吃過路兵的格子或 -1）, h（50 步計數）, n（回合）} */
@@ -331,7 +334,8 @@ function replay() {
   else if (E.insufficient(s.b)) result = { r: "d", why: "雙方子力都不足以將死" };
   return { s, keys, sans, legal: legalNow, check, result };
 }
-const humanTurn = () => S.mode === "local" || G.s.w === S.humanWhite;
+const humanTurn = () => S.mode === "online" ? !!(NETP && NETP.myTurn()) : (S.mode === "local" || G.s.w === S.humanWhite);
+const NETP_turnSeat = () => (G.s.w ? 0 : 1);
 const aiTurn = () => S.mode === "ai" && !S.over && !humanTurn();
 const sideName = w => (w ? "白" : "黑");
 function play(m) {
@@ -339,6 +343,7 @@ function play(m) {
   G = replay();
   if (G.result) finish(G.result);
   else if (G.check) stamp("將軍", "", true);
+  if (S.mode === "online" && NETP) NETP.push();
   save(); render(); maybeAi();
 }
 function finish(res) {
@@ -414,7 +419,8 @@ function draw() {
     el("text", { x: 12, y: M0 + k * SQ + SQ / 2 }, lab).textContent = rank;
   }
 }
-function render() {
+function render() { render0(); if (typeof onlineOverlay === "function" && NETP) onlineOverlay(); }
+function render0() {
   draw();
   const pr = (s2, attr, val) => document.querySelectorAll(s2 + " button").forEach(b => b.setAttribute("aria-pressed", b.dataset[attr] === String(val)));
   pr("#modeSeg", "mode", S.mode); pr("#sideSeg", "white", S.humanWhite ? 1 : 0); pr("#lvlSeg", "lv", S.level);
@@ -509,9 +515,66 @@ $("btnHint").onclick = () => {
   });
 };
 const bind = (s2, f) => document.querySelectorAll(s2 + " button").forEach(b => b.onclick = () => f(b.dataset));
-bind("#modeSeg", d => { if (d.mode === S.mode) return; S.mode = d.mode; token++; thinking = false; save(); render(); maybeAi(); });
+bind("#modeSeg", d => { if (d.mode === S.mode) return; if (S.mode === "online" && NETP && NETP.active()) NETP.leave(); S.mode = d.mode; token++; thinking = false; save(); render(); maybeAi(); });
 bind("#sideSeg", d => { const f = d.white === "1"; if (f === S.humanWhite) return; S.humanWhite = f; S.flipped = !f; token++; thinking = false; save(); render(); maybeAi(); });
 bind("#lvlSeg", d => { S.level = +d.lv; save(); render(); });
+
+/* ───────── 連線對戰（net.js，兩支手機直接連線） ───────── */
+function onlineUndoFor(seat) {
+  const keep = S.moves.slice(); let mv = S.moves.slice();
+  do { mv.pop(); S.moves = mv.slice(); G = replay(); } while (mv.length && NETP_turnSeat() !== seat);
+  S.moves = keep; G = replay();
+  return mv;
+}
+function onlineApply(st, remote) {
+  const was = !!S.over;
+  
+  S.moves = (st.moves || []).slice(); S.over = null; sel = -1; targets = []; hint = null;
+  G = replay();
+  if (st.over) {
+    if (!was) { finish(st.over); }
+    if (!was && st.over.resign) {                       // 認輸：小字改成誰認輸
+      const box = document.querySelector("#fx .stamp");
+      if (box) { let sm = box.querySelector(".small"); if (!sm) { sm = document.createElement("span"); sm.className = "small"; box.appendChild(sm); } sm.textContent = remote ? "對方認輸" : "你認輸"; }
+    }
+    S.over = st.over;
+  } else $("fx").innerHTML = "";
+  save(); render();
+}
+NETP = NetPlay.widget({
+  game: "chess", el: $("netBox"), sides: ["白（先走）", "黑"],
+  adapter: {
+    getState: () => ({ moves: S.moves.slice(), over: S.over || null, cfg: null }),
+    setState: onlineApply,
+    turnSeat: () => NETP_turnSeat(),
+    undoFor: onlineUndoFor,
+    newCfg: () => (null),
+    resignOver: seat => ({ r: seat === 0 ? "b" : "w", why: `${seat === 0 ? "白" : "黑"}方認輸`, resign: true }),
+    drawOver: () => ({ r: "d", why: "雙方同意和棋", agreed: true }),
+    onEnter(seat) { S.mode = "online"; token++; thinking = false; S.flipped = seat === 1; save(); render(); },
+    onLeave() { S.mode = "local"; S.moves = []; S.over = null; $("fx").innerHTML = ""; G = replay(); save(); render(); },
+  },
+  onWantOnline() { S.mode = "online"; render(); },
+  onRender() { onlineOverlay(); },
+});
+function onlineOverlay() {
+  const on = S.mode === "online";
+  $("netBox").hidden = !on;
+  if (!on) return;
+  $("aiOpts").hidden = true;
+  const act = NETP && NETP.active();
+  if (!S.over) $("msg").textContent = !act ? "連線對戰：開房間，或輸入對方的房號" : !NETP.connected() ? "等對手連線…" : NETP.myTurn() ? "輪到你" : "等對手下…";
+  $("btnUndo").disabled = !act || !S.moves.length || !!S.over;
+  $("btnGiveUp").disabled = !act || !!S.over || !S.moves.length;
+  $("btnHint").disabled = true; $("btnDraw").disabled = !act || !!S.over || !S.moves.length;
+}
+{
+  const offNew = $("btnNew").onclick, offUndo = $("btnUndo").onclick, offGive = $("btnGiveUp").onclick;
+  $("btnNew").onclick = () => S.mode === "online" ? (NETP.active() && ask("跟對方要求重新開一盤？", () => NETP.request("new"))) : offNew();
+  $("btnUndo").onclick = () => S.mode === "online" ? (NETP.active() && S.moves.length && NETP.request("undo")) : offUndo();
+  $("btnGiveUp").onclick = () => S.mode === "online" ? (NETP.active() && ask("認輸這盤？", () => NETP.resign())) : offGive();
+  { const offDraw = $("btnDraw").onclick; $("btnDraw").onclick = () => S.mode === "online" ? (NETP.active() && NETP.request("draw")) : offDraw(); }
+}
 (function init() {
   let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
   S = Object.assign(defaults(), st || {});

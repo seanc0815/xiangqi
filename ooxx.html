@@ -66,7 +66,8 @@
     <div class="group"><span class="label">模式</span>
       <div class="seg" id="varSeg"><button data-v="classic">經典 3×3</button><button data-v="ultimate">超級井字</button></div></div>
     <div class="group"><span class="label">玩法</span>
-      <div class="seg" id="modeSeg"><button data-mode="local">雙人同機</button><button data-mode="ai">對電腦</button></div></div>
+      <div class="seg" id="modeSeg"><button data-mode="local">雙人同機</button><button data-mode="ai">對電腦</button><button data-mode="online">連線對戰</button></div></div>
+    <div class="group" id="netBox" hidden></div>
     <div class="group" id="aiOpts"><span class="label">我是</span>
       <div class="seg" id="sideSeg"><button data-x="1">X（先下）</button><button data-x="0">O</button></div>
       <span class="label" style="margin-top:6px">電腦棋力</span>
@@ -88,7 +89,9 @@
   </aside>
 </div>
 
+<script src="net.js"></script>
 <script>
+let NETP = null;
 /* ───────── 規則與電腦 ───────── */
 function OOXXENGINE() {
   const L = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
@@ -186,12 +189,14 @@ function replay() {
   return { s, turn: s.turn, result: E.uwinner(s) };
 }
 function legal() { return S.variant === "classic" ? [...Array(9).keys()].filter(i => !G.a[i]) : E.ulegal(G.s); }
-const humanTurn = () => S.mode === "local" || (G.turn === 1) === S.humanX;
+const humanTurn = () => S.mode === "online" ? !!(NETP && NETP.myTurn()) : (S.mode === "local" || (G.turn === 1) === S.humanX);
+const NETP_turnSeat = () => (G.turn === 1 ? 0 : 1);
 const aiTurn = () => S.mode === "ai" && !G.result && !S.over && !humanTurn();
 
 function play(m) {
   S.moves.push(m); G = replay();
   if (G.result) finish(G.result);
+  if (S.mode === "online" && NETP) NETP.push();
   save(); render(); maybeAi();
 }
 function finish(r) {
@@ -279,7 +284,8 @@ function win3(a, xy, w) {
       el("line", { x1, y1, x2, y2, stroke: "var(--jade)", "stroke-width": w, "stroke-linecap": "round", opacity: .85 }, svg);
     }
 }
-function render() {
+function render() { render0(); if (typeof onlineOverlay === "function" && NETP) onlineOverlay(); }
+function render0() {
   draw();
   const pr = (sel, attr, val) => document.querySelectorAll(sel + " button").forEach(b => b.setAttribute("aria-pressed", b.dataset[attr] === String(val)));
   pr("#varSeg", "v", S.variant); pr("#modeSeg", "mode", S.mode); pr("#sideSeg", "x", S.humanX ? 1 : 0); pr("#lvlSeg", "lv", S.level);
@@ -336,10 +342,67 @@ $("btnGiveUp").onclick = () => ask("認輸這盤？", () => {
 });
 const bind = (sel, f) => document.querySelectorAll(sel + " button").forEach(b => b.onclick = () => f(b.dataset));
 bind("#varSeg", d => { if (d.v === S.variant) return; const go = () => { S.variant = d.v; newGame(); }; S.moves.length && !S.over ? ask("換模式會重新開始，確定？", go) : go(); });
-bind("#modeSeg", d => { if (d.mode === S.mode) return; S.mode = d.mode; token++; thinking = false; save(); render(); maybeAi(); });
+bind("#modeSeg", d => { if (d.mode === S.mode) return; if (S.mode === "online" && NETP && NETP.active()) NETP.leave(); S.mode = d.mode; token++; thinking = false; save(); render(); maybeAi(); });
 bind("#sideSeg", d => { const x = d.x === "1"; if (x === S.humanX) return; S.humanX = x; token++; thinking = false; save(); render(); maybeAi(); });
 bind("#lvlSeg", d => { S.level = +d.lv; save(); render(); });
 
+
+/* ───────── 連線對戰（net.js，兩支手機直接連線） ───────── */
+function onlineUndoFor(seat) {
+  const keep = S.moves.slice(); let mv = S.moves.slice();
+  do { mv.pop(); S.moves = mv.slice(); G = replay(); } while (mv.length && NETP_turnSeat() !== seat);
+  S.moves = keep; G = replay();
+  return mv;
+}
+function onlineApply(st, remote) {
+  const was = !!S.over;
+  if (st.cfg && st.cfg.variant) S.variant = st.cfg.variant;
+  S.moves = (st.moves || []).slice(); S.over = null; 
+  G = replay();
+  if (st.over) {
+    if (!was) { finish(st.over.r); }
+    if (!was && st.over.resign) {                       // 認輸：小字改成誰認輸
+      const box = document.querySelector("#fx .stamp");
+      if (box) { let sm = box.querySelector(".small"); if (!sm) { sm = document.createElement("span"); sm.className = "small"; box.appendChild(sm); } sm.textContent = remote ? "對方認輸" : "你認輸"; }
+    }
+    S.over = st.over;
+  } else $("fx").innerHTML = "";
+  save(); render();
+}
+NETP = NetPlay.widget({
+  game: "ooxx", el: $("netBox"), sides: ["X（先下）", "O"],
+  adapter: {
+    getState: () => ({ moves: S.moves.slice(), over: S.over || null, cfg: { variant: S.variant } }),
+    setState: onlineApply,
+    turnSeat: () => NETP_turnSeat(),
+    undoFor: onlineUndoFor,
+    newCfg: () => ({ variant: S.variant }),
+    resignOver: seat => ({ r: seat === 0 ? 2 : 1, resign: true }),
+    
+    onEnter(seat) { S.mode = "online"; token++; thinking = false;  save(); render(); },
+    onLeave() { S.mode = "local"; S.moves = []; S.over = null; $("fx").innerHTML = ""; G = replay(); save(); render(); },
+  },
+  onWantOnline() { S.mode = "online"; render(); },
+  onRender() { onlineOverlay(); },
+});
+function onlineOverlay() {
+  const on = S.mode === "online";
+  $("netBox").hidden = !on;
+  if (!on) return;
+  $("aiOpts").hidden = true;
+  const act = NETP && NETP.active();
+  if (!S.over) $("msg").textContent = !act ? "連線對戰：開房間，或輸入對方的房號" : !NETP.connected() ? "等對手連線…" : NETP.myTurn() ? "輪到你" : "等對手下…";
+  $("btnUndo").disabled = !act || !S.moves.length || !!S.over;
+  $("btnGiveUp").disabled = !act || !!S.over || !S.moves.length;
+  
+}
+{
+  const offNew = $("btnNew").onclick, offUndo = $("btnUndo").onclick, offGive = $("btnGiveUp").onclick;
+  $("btnNew").onclick = () => S.mode === "online" ? (NETP.active() && ask("跟對方要求重新開一盤？", () => NETP.request("new"))) : offNew();
+  $("btnUndo").onclick = () => S.mode === "online" ? (NETP.active() && S.moves.length && NETP.request("undo")) : offUndo();
+  $("btnGiveUp").onclick = () => S.mode === "online" ? (NETP.active() && ask("認輸這盤？", () => NETP.resign())) : offGive();
+  
+}
 (function init() {
   let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
   S = Object.assign(defaults(), st || {});
