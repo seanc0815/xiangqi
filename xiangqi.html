@@ -197,6 +197,7 @@
         <div class="row">
           <button class="btn" id="btnResign">認輸</button>
           <button class="btn" id="btnRematch">再來一盤</button>
+          <button class="btn" id="btnSwap">交換紅黑</button>
           <button class="btn" id="btnLeave">離開房間</button>
         </div>
         <div class="note" id="roomNote"></div>
@@ -932,6 +933,11 @@ function watch(code) {
     if (!snap.exists) { NET.game = null; $("roomNote").textContent = "這個房間已不存在。"; renderPanel(); return; }
     const d = snap.data();
     NET.game = d;
+    const mineRed = d.red === NET.me ? true : d.black === NET.me ? false : null;
+    if (mineRed !== null && mineRed !== S.online.red) {               // 有人按了「交換紅黑」
+      S.online.red = mineRed; S.flipped = !mineRed; save(); drawBoard();
+      $("roomNote").textContent = `已交換：你現在執${mineRed ? "紅方（先走）" : "黑方"}`;
+    }
     const off = d.drawOffer;
     if (off && !d.result && off.red !== S.online.red && off.n === (Array.isArray(d.moves) ? d.moves.length : 0)
         && NET.offerSeen !== off.n) {
@@ -1021,6 +1027,10 @@ function renderOnline() {
   $("roomWho").textContent = `你執${S.online.red ? "紅方" : "黑方"}　` + (both ? "對手已加入" : "等對手輸入房號…");
   $("btnResign").disabled = !both || !!gameOver();
   $("btnRematch").disabled = !gm;
+  const fresh = !S.moves.length || !!gameOver();
+  $("btnSwap").textContent = `換我執${S.online.red ? "黑" : "紅"}`;
+  $("btnSwap").disabled = !gm || !fresh;
+  $("btnSwap").title = fresh ? "" : "下完這盤（或還沒開始時）才能交換";
 }
 
 /* ───────── 點棋盤 ───────── */
@@ -1158,6 +1168,11 @@ $("btnResign").onclick = () => ask("確定認輸？", () => {
 $("btnRematch").onclick = () => {
   const go = () => { S.moves = []; S.result = null; save(); rebuild(); pushOnline({ moves: [], result: null, drawOffer: null }); };
   if (inProgress()) ask("這盤還沒下完，確定重新開始？（對手的畫面也會清空）", go); else go();
+};
+$("btnSwap").onclick = () => {                                      // 還沒開始或下完一盤時：紅黑對調並清空棋盤
+  const gm = NET.game; if (!gm || (S.moves.length && !gameOver())) return;
+  S.moves = []; S.result = null; save(); rebuild();
+  pushOnline({ red: gm.black || null, black: gm.red || null, moves: [], result: null, drawOffer: null });
 };
 $("btnCopy").onclick = async () => {
   const code = S.online && S.online.code; if (!code) return;

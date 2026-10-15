@@ -167,7 +167,7 @@
   /* ───── 每個棋共用的介面（大廳、房間、請求確認） ───── */
   function widget(o) {
     const A = o.adapter, el = o.el;
-    let room = null, seat = null, lastReqSeen = null;
+    let room = null, seat = null, lastReqSeen = null, swapNote = "";
     el.innerHTML = `
       <div data-n="lobby">
         <div class="group"><span class="label">我要當</span>
@@ -188,7 +188,7 @@
         <div class="note" data-n="rnote" style="margin-top:4px"></div>
         <div data-n="ask" hidden style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:13px">
           <span data-n="asktext"></span><button class="btn primary" data-n="yes" style="padding:4px 10px;font-size:13px">同意</button><button class="btn" data-n="no" style="padding:4px 10px;font-size:13px">不同意</button></div>
-        <div style="margin-top:8px"><button class="btn" data-n="leave" style="padding:4px 10px;font-size:13px">離開房間</button></div>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-n="swap" style="padding:4px 10px;font-size:13px">交換</button><button class="btn" data-n="leave" style="padding:4px 10px;font-size:13px">離開房間</button></div>
       </div>`;
     const $ = n => el.querySelector(`[data-n="${n}"]`);
     let wantSeat = 0;
@@ -200,9 +200,17 @@
       onStatus(s, msg) { render(msg); },
       onDoc(d, remote) {
         if (!d) return;
-        if (seat === null && room) seat = room.role === "host" ? d.hostSeat : 1 - d.hostSeat;
+        let note;
+        if (room) {
+          const s = room.role === "host" ? d.hostSeat : 1 - d.hostSeat;
+          if (seat !== null && s !== seat) {               // 有人按了「交換」：兩邊都換位子、清空棋盤
+            seat = s; A.onEnter && A.onEnter(seat);
+            A.setState({ moves: d.moves || [], over: d.over || null, cfg: d.cfg || null }, true);
+            note = swapNote = `已交換：你現在是${o.sides[seat]}`;
+          } else if (seat === null) seat = s;
+        }
         if (remote) A.setState({ moves: d.moves || [], over: d.over || null, cfg: d.cfg || null }, true);
-        render();
+        render(note);
       },
     };
     function enter(r) {
@@ -241,7 +249,7 @@
     }
     function leave(silent) {
       if (room) room.close();
-      room = null; seat = null; lastReqSeen = null;
+      room = null; seat = null; lastReqSeen = null; swapNote = "";
       A.onLeave && A.onLeave();
       if (!silent) render();
     }
@@ -254,9 +262,14 @@
       const st = room.state;
       const other = seat === null ? "" : o.sides[1 - seat];
       $("who").textContent = seat === null ? "" : `你：${o.sides[seat]}｜對手：${other}`;
-      $("rnote").textContent = msg || (st === "connected" ? "已連線" : st === "waiting" ? (room.role === "host" ? "等對方加入（對方輸入房號或點邀請連結）" : "") : st === "reconnecting" ? "重新連線中…" : st === "error" ? "連線伺服器連不上，檢查網路" : "連線中…");
+      if (d.moves && d.moves.length) swapNote = "";
+      $("rnote").textContent = msg || (st === "connected" && swapNote ? swapNote : st === "connected" ? "已連線" : st === "waiting" ? (room.role === "host" ? "等對方加入（對方輸入房號或點邀請連結）" : "") : st === "reconnecting" ? "重新連線中…" : st === "error" ? "連線伺服器連不上，檢查網路" : "連線中…");
       const req = d.req;
       const ask = $("ask");
+      const sw = $("swap"), fresh = !(d.moves && d.moves.length) || !!d.over;
+      sw.textContent = seat === null ? "交換" : `換我當${o.sides[1 - seat]}`;
+      sw.disabled = seat === null || !fresh;
+      sw.title = fresh ? "" : "下完這盤（或還沒開始時）才能交換";
       if (req && req.by !== seat && (!d.over || req.type === "new")) {      // 結束後只剩「重開一盤」有意義
         ask.hidden = false;
         $("asktext").textContent = { undo: "對方想悔棋，同意嗎？", new: "對方想重新開一盤，同意嗎？", draw: "對方提和，同意嗎？" }[req.type] || "對方的請求";
@@ -268,6 +281,11 @@
     $("create").onclick = create;
     $("join").onclick = () => join();
     $("leave").onclick = () => leave();
+    $("swap").onclick = () => {                            // 還沒開始或下完一盤時，換邊並重開（不用對方同意，對方畫面會提示）
+      const d = room && room.doc.data; if (!d || seat === null) return;
+      if (d.moves && d.moves.length && !d.over) return;
+      room.update({ hostSeat: 1 - d.hostSeat, moves: [], over: null, req: null, cfg: d.over && A.newCfg ? A.newCfg() : d.cfg });
+    };
     $("copy").onclick = () => {
       const u = new URL(location.href); u.searchParams.set("room", room.code);
       const txt = u.toString();
