@@ -42,14 +42,36 @@
 
   /* ───── 房間（只管傳輸與同步） ───── */
   class Room {
+    // 2026-10-16（Gabi：「連線超級卡 會一直回朔」）：
+    //  1. 訪客送出的每一步都有編號，主機回傳「收到第幾號」；沒收到回條的會留著，重新連上後補送（主機用編號去重）→ 斷線時下的那步不會消失
+    //  2. 主機的棋局到了以後，再把自己還沒被確認的步數疊上去 → 畫面不會先退回去再跳回來
+    //  3. 重新連線只有一條：以前逾時、斷線、伺服器重連會各自開一條，連線互相踢掉、一直重連
     constructor(game, code, role, h) {
-      Object.assign(this, { game, code, role, h, doc: { v: 0, data: null }, peer: null, conn: null, closed: false, last: 0, timer: null, tries: 0 });
+      Object.assign(this, {
+        game, code, role, h, doc: { v: 0, data: null }, peer: null, conn: null, closed: false, last: 0, timer: null,
+        gid: Math.random().toString(36).slice(2, 10), seq: 0, pending: [], seen: { g: null, s: 0 }, retryT: null, busy: null, fails: 0,
+      });
+      this.onVis = () => {
+        if (document.visibilityState !== "visible" || this.closed || this.role !== "guest" || (this.conn && this.conn.open)) return;
+        clearTimeout(this.retryT); this.retryT = null;
+        this.connectGuest(false).catch(() => { });
+      };
+      try { document.addEventListener("visibilitychange", this.onVis); } catch (e) { }
     }
     pid() { return PREFIX + this.game + "-" + this.code; }
     key() { return "bbx-room-" + this.game; }
-    persist() { ls.set(this.key(), { code: this.code, role: this.role, doc: this.doc }); }
+    persist() { ls.set(this.key(), { code: this.code, role: this.role, doc: this.doc, gid: this.gid, seq: this.seq, pending: this.pending, seen: this.seen }); }
+    restore(s) {
+      this.doc = s.doc || { v: 0, data: null };
+      if (s.gid) this.gid = s.gid;
+      this.seq = s.seq || 0;
+      this.pending = Array.isArray(s.pending) ? s.pending : [];
+      this.seen = s.seen || { g: null, s: 0 };
+      return this;
+    }
     status(s, msg) { this.state = s; this.h.onStatus && this.h.onStatus(s, msg || ""); }
-    send(o) { try { if (this.conn && this.conn.open) this.conn.send(o); } catch (e) { } }
+    send(o, c) { c = c || this.conn; try { if (c && c.open) c.send(o); } catch (e) { } }
+    docMsg() { return { t: "doc", v: this.doc.v, data: this.doc.data, ack: this.seen }; }
     fire(remote) { this.persist(); this.h.onDoc && this.h.onDoc(this.doc.data, remote); }
     startPing() {
       clearInterval(this.timer);
@@ -57,42 +79,68 @@
       this.timer = setInterval(() => {
         if (this.closed) return;
         this.send({ t: "ping" });
-        if (this.conn && this.conn.open && Date.now() - this.last > 15000) {
-          try { this.conn.close(); } catch (e) { }
-          this.onConnLost();
+        const c = this.conn;
+        if (c && c.open && Date.now() - this.last > 15000) {
+          this.onConnLost(c);
+          try { c.close(); } catch (e) { }
         }
       }, 4000);
     }
-    onData(m) {
+    onData(m, c) {
       this.last = Date.now();
       if (!m || typeof m !== "object") return;
-      if (m.t === "ping") { this.send({ t: "pong" }); return; }
+      if (m.t === "ping") { this.send({ t: "pong" }, c); return; }
       if (m.t === "pong") return;
-      if (this.role === "host" && m.t === "patch") {
-        this.doc.data = Object.assign({}, this.doc.data, m.patch);
-        this.doc.v++;
-        this.send({ t: "doc", v: this.doc.v, data: this.doc.data });
-        this.fire(true);
-      } else if (this.role === "host" && m.t === "hello") {
-        this.send({ t: "doc", v: this.doc.v, data: this.doc.data });
-      } else if (this.role === "guest" && m.t === "doc") {
-        if (m.v >= this.doc.v) { this.doc = { v: m.v, data: m.data }; this.fire(true); }
+      if (this.role === "host") {
+        if (m.t === "patch") {
+          if (m.g !== this.seen.g) this.seen = { g: m.g || null, s: 0 };        // 換了一個訪客（或舊版沒有編號）
+          if (!(m.s <= this.seen.s)) {                                        // 沒套用過的才套
+            this.doc.data = Object.assign({}, this.doc.data, m.patch);
+            this.doc.v++;
+            this.seen = { g: this.seen.g, s: m.s || 0 };
+            this.fire(true);
+          }
+          this.send(this.docMsg(), c);
+        } else if (m.t === "hello") this.send(this.docMsg(), c);
+      } else if (m.t === "doc") {
+        if (!(m.v >= this.doc.v)) return;
+        const ack = m.ack;
+        if (!ack) this.pending = [];                                          // 舊版主機不回條：不疊
+        else if (ack.g === this.gid) this.pending = this.pending.filter(p => p.s > ack.s);
+        let data = m.data;
+        for (const p of this.pending) data = Object.assign({}, data, p.patch);
+        const before = JSON.stringify(this.doc.data);
+        this.doc = { v: m.v, data };
+        if (JSON.stringify(data) !== before) this.fire(true); else this.persist();
       }
     }
     attach(conn) {
-      if (this.conn && this.conn !== conn) { try { this.conn.close(); } catch (e) { } }
-      this.conn = conn;
-      conn.on("data", d => this.onData(d));
-      conn.on("open", () => { this.last = Date.now(); this.status("connected"); if (this.role === "guest") this.send({ t: "hello" }); else this.send({ t: "doc", v: this.doc.v, data: this.doc.data }); });
-      conn.on("close", () => { if (this.conn === conn) this.onConnLost(); });
-      conn.on("error", () => { if (this.conn === conn) this.onConnLost(); });
-      this.startPing();
+      conn.on("data", d => this.onData(d, conn));
+      conn.on("open", () => {
+        if (this.closed) { try { conn.close(); } catch (e) { } return; }
+        const old = this.conn;
+        this.conn = conn;
+        if (old && old !== conn) { try { old.close(); } catch (e) { } }
+        this.last = Date.now(); this.fails = 0;
+        this.status("connected");
+        if (this.role === "guest") {
+          this.send({ t: "hello" });
+          for (const p of this.pending) this.send({ t: "patch", g: this.gid, s: p.s, patch: p.patch });   // 補送斷線時下的
+        } else this.send(this.docMsg());
+      });
+      conn.on("close", () => this.onConnLost(conn));
+      conn.on("error", () => this.onConnLost(conn));
+      if (!this.timer) this.startPing();
     }
-    onConnLost() {
-      if (this.closed) return;
+    onConnLost(c) {
+      if (this.closed || (c && this.conn !== c)) return;                     // 舊的連線關掉不算
       this.conn = null;
       if (this.role === "host") this.status("waiting", "對方離線了，等他重新連上…");
-      else { this.status("reconnecting", "連線中斷，重新連線中…"); setTimeout(() => this.connectGuest(false), 2500); }
+      else { this.status("reconnecting", "連線中斷，重新連線中…"); this.retry(1500); }
+    }
+    retry(ms) {
+      if (this.closed || this.retryT) return;
+      this.retryT = setTimeout(() => { this.retryT = null; this.connectGuest(false).catch(() => { }); }, ms);
     }
     async startHost(initial, fresh) {
       await loadLib();
@@ -104,15 +152,15 @@
           this.peer = p;
           p.on("open", () => { this.status(this.conn ? "connected" : "waiting", "等對方加入…"); resolve(this); });
           p.on("connection", c => this.attach(c));
-          p.on("disconnected", () => { if (!this.closed) setTimeout(() => { try { p.reconnect(); } catch (e) { } }, 2000); });
+          p.on("disconnected", () => { if (!this.closed && !p.destroyed) setTimeout(() => { try { if (p.disconnected && !p.destroyed) p.reconnect(); } catch (e) { } }, 2000); });
           p.on("error", e => {
             if (e && e.type === "unavailable-id") {
               try { p.destroy(); } catch (x) { }
               if (fresh) { this.code = newCode(); open(); }                 // 新房號撞到 → 換一個
               else setTimeout(open, 4000);                                  // 重新整理：舊編號還沒釋放，等一下
             } else if (e && (e.type === "network" || e.type === "server-error" || e.type === "socket-error" || e.type === "socket-closed")) {
-              this.status("error", "連不到連線伺服器，檢查一下網路");
-              if (!this.peer || this.peer === p) setTimeout(() => { try { p.reconnect(); } catch (x) { } }, 4000);
+              this.status(this.conn && this.conn.open ? "connected" : "error", "連不到連線伺服器，檢查一下網路");
+              if (this.peer === p) setTimeout(() => { try { if (p.disconnected && !p.destroyed) p.reconnect(); } catch (x) { } }, 4000);
               reject && reject(e); reject = null;
             }
           });
@@ -120,48 +168,57 @@
         open();
       });
     }
-    async connectGuest(first) {
-      if (this.closed) return;
-      await loadLib();
-      return new Promise((resolve, reject) => {
-        const go = () => {
-          if (this.closed) return;
-          let done = false;
-          const finish = ok => { if (done) return; done = true; ok ? resolve(this) : (first ? reject(new Error("notfound")) : setTimeout(() => this.connectGuest(false), 4000)); };
-          if (!this.peer || this.peer.destroyed) {
-            this.peer = new window.Peer({ debug: 0 });
-            this.peer.on("error", e => { if (e && e.type === "peer-unavailable") finish(false); });
-            this.peer.on("disconnected", () => { if (!this.closed) setTimeout(() => { try { this.peer.reconnect(); } catch (x) { } }, 2000); });
-          }
-          const start = () => {
-            const c = this.peer.connect(this.pid(), { reliable: true });
-            this.attach(c);
-            c.on("open", () => finish(true));
-            setTimeout(() => finish(c.open), 9000);
-          };
-          if (this.peer.open) start(); else this.peer.on("open", start);
+    connectGuest(first) {
+      if (this.closed) return Promise.resolve(this);
+      if (this.conn && this.conn.open) return Promise.resolve(this);
+      if (this.busy) return this.busy;                                        // 已經在連了，不再開第二條
+      this.status(first ? "connecting" : "reconnecting", first ? "連線中…" : "重新連線中…");
+      this.busy = loadLib().then(() => new Promise((resolve, reject) => {
+        let done = false, c = null;
+        const finish = ok => {
+          if (done) return;
+          done = true; this.busy = null; this.onPeerErr = null;
+          if (ok) { resolve(this); return; }
+          if (c) { if (this.conn === c) this.conn = null; try { c.close(); } catch (e) { } }   // 放棄的連線關掉，免得晚點才接上把好的踢掉
+          if (++this.fails >= 3 && this.peer) { try { this.peer.destroy(); } catch (e) { } this.peer = null; this.fails = 0; }
+          if (first) reject(new Error("notfound"));
+          else { this.status("reconnecting", "重新連線中…"); this.retry(3000); resolve(this); }
         };
-        this.status(first ? "connecting" : "reconnecting", first ? "連線中…" : "重新連線中…");
-        go();
-      });
+        if (!this.peer || this.peer.destroyed) {
+          const p = this.peer = new window.Peer({ debug: 0 });
+          p.on("error", e => { if (e && e.type === "peer-unavailable" && this.onPeerErr) this.onPeerErr(); });
+          p.on("disconnected", () => { if (!this.closed && !p.destroyed) setTimeout(() => { try { if (p.disconnected && !p.destroyed) p.reconnect(); } catch (x) { } }, 2000); });
+        }
+        this.onPeerErr = () => finish(false);
+        const start = () => {
+          if (done || this.closed) return;
+          c = this.peer.connect(this.pid(), { reliable: true });
+          this.attach(c);
+          c.on("open", () => finish(true));
+        };
+        setTimeout(() => finish(!!(c && c.open)), 10000);
+        if (this.peer.open) start(); else this.peer.once("open", start);
+      }));
+      return this.busy;
     }
     update(patch) {
       this.doc.data = Object.assign({}, this.doc.data, patch);
-      if (this.role === "host") { this.doc.v++; this.send({ t: "doc", v: this.doc.v, data: this.doc.data }); }
-      else this.send({ t: "patch", patch });
+      if (this.role === "host") { this.doc.v++; this.send(this.docMsg()); }
+      else {
+        const p = { s: ++this.seq, patch };
+        this.pending.push(p);
+        this.send({ t: "patch", g: this.gid, s: p.s, patch });
+      }
       this.fire(false);
     }
-    dispose() {                       // 只關連線，不清掉存檔（試探房間失敗時用）
-      this.closed = true; clearInterval(this.timer);
+    shut() {
+      this.closed = true; clearInterval(this.timer); clearTimeout(this.retryT);
+      try { document.removeEventListener("visibilitychange", this.onVis); } catch (e) { }
       try { this.conn && this.conn.close(); } catch (e) { }
       try { this.peer && this.peer.destroy(); } catch (e) { }
     }
-    close() {
-      this.closed = true; clearInterval(this.timer);
-      try { this.conn && this.conn.close(); } catch (e) { }
-      try { this.peer && this.peer.destroy(); } catch (e) { }
-      ls.del(this.key());
-    }
+    dispose() { this.shut(); }       // 只關連線，不清掉存檔（試探房間失敗時用）
+    close() { this.shut(); ls.del(this.key()); }
   }
 
   /* ───── 每個棋共用的介面（大廳、房間、請求確認） ───── */
@@ -316,8 +373,7 @@
         join(urlRoom);
       } else if (saved && saved.code) {
         o.onWantOnline && o.onWantOnline();
-        const r = new Room(o.game, saved.code, saved.role, handlers);
-        r.doc = saved.doc || { v: 0, data: null };
+        const r = new Room(o.game, saved.code, saved.role, handlers).restore(saved);
         enter(r);
         if (saved.role === "host") r.startHost(null, false).catch(() => { });
         else r.connectGuest(false).catch(() => { });
@@ -354,8 +410,7 @@
       if (rooms[code]) return rooms[code];
       const saved = ls.get("bbx-room-" + game);
       if (saved && saved.code === code) {                     // 重新整理：接回原本的角色
-        const r = new Room(game, code, saved.role, handlersFor(code));
-        r.doc = saved.doc || { v: 0, data: null };
+        const r = new Room(game, code, saved.role, handlersFor(code)).restore(saved);
         rooms[code] = r;
         if (saved.role === "host") r.startHost(null, false).catch(() => { }); else r.connectGuest(false).catch(() => { });
         return r;
