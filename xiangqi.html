@@ -727,7 +727,7 @@ function renderPanel() {
     if (S.mode === "ai") msg = over.winRed === S.humanRed ? "你贏了！" : "電腦贏了";
     if (S.mode === "online" && S.online) msg = over.winRed === S.online.red ? "你贏了！" : "對手贏了";
     sub = over.why + "。" + (S.mode === "online" ? "按「再來一盤」重新開始。" : "按「新局」再來一盤。");
-  } else if (view != null) { msg = `復盤：第 ${view} 步／共 ${S.moves.length} 步`; sub = view === 0 ? "開局。按 ▶ 往後看，「回到現在」繼續下" : `${GF.hist[view - 1].red ? "紅" : "黑"}：${GF.hist[view - 1].note}。點棋譜或 ◀ ▶ 看每一步`; }
+  } else if (view != null) { msg = `${S.mode === "online" && S.online ? "一起復盤" : "復盤"}：第 ${view} 步／共 ${S.moves.length} 步`; sub = view === 0 ? "開局。按 ▶ 往後看，「回到現在」繼續下" : `${GF.hist[view - 1].red ? "紅" : "黑"}：${GF.hist[view - 1].note}。點棋譜或 ◀ ▶ 看每一步`; }
   else if (thinking) { msg = "電腦思考中…"; sub = "可以先看一下棋譜"; }
   else if (S.mode === "online") {
     if (!S.online) { msg = "連線對戰"; sub = "開新房間，或輸入對手給你的房號"; }
@@ -854,12 +854,16 @@ function rebuild(landed) {
   render(view == null ? landed : undefined);
 }
 /* 復盤：看第 k 步的局面（k = 步數，0 = 開局；到最新一步就回到「現在」） */
-function setView(k) {
+function setView(k, fromRemote) {
   const n = S.moves.length;
-  view = (k == null || k >= n) ? null : Math.max(0, k);
+  const next = (k == null || k >= n) ? null : Math.max(0, k);
+  const changed = next !== view;
+  view = next;
   G = view == null ? GF : replay(S.moves.slice(0, view));
   sel = -1; targets = []; hint = null;
   render();
+  // 連線：復盤是兩個人一起看（Gabi 2026-10-17）——我翻到哪一步，對手的棋盤也跟著到那一步
+  if (changed && !fromRemote && S.mode === "online" && S.online && NET.game) pushOnline({ review: view == null ? null : { at: view, by: S.online.red, id: Date.now() } });
 }
 /* 悔棋次數：limit -1 = 不限；used 由各邊各自累計 */
 function undoLimit() { return S.mode === "online" ? (NET.game && NET.game.undoLimit != null ? NET.game.undoLimit : 3) : (S.undoLimit == null ? 3 : S.undoLimit); }
@@ -1012,7 +1016,7 @@ function watch(code) {
     if (rb && !d.result && rb.by !== S.online.red && rb.n === (Array.isArray(d.moves) ? d.moves.length : 0) && NET.rbSeen !== rb.id) {
       NET.rbSeen = rb.id;
       ask(`對手想退回到第 ${rb.to} 步（刪掉後面 ${rb.n - rb.to} 步），同意嗎？`,
-          () => { const patch = {}; spendUndo(rb.by, patch); view = null; S.moves = S.moves.slice(0, rb.to); S.result = null; save(); rebuild(); pushOnline(Object.assign({ moves: S.moves.slice(), result: null, drawOffer: null, rollback: null }, patch)); },
+          () => { const patch = {}; spendUndo(rb.by, patch); view = null; S.moves = S.moves.slice(0, rb.to); S.result = null; save(); rebuild(); pushOnline(Object.assign({ moves: S.moves.slice(), result: null, drawOffer: null, rollback: null, review: null }, patch)); },
           () => pushOnline({ rollback: null, rollbackNote: { to: rb.by, id: rb.id, text: "對手不同意退回" } }), "同意", "不同意");
     }
     if (rb && rb.by === S.online.red && !d.result) $("roomNote").textContent = `等對手同意退回到第 ${rb.to} 步…`;
@@ -1029,6 +1033,8 @@ function watch(code) {
       if (extendsOne) announce();                                  // 對手剛走的那一步
     } else if (prevResult !== JSON.stringify(S.result)) renderPanel();
     else renderPanel();
+    const rvAt = d.review && d.review.at != null && d.review.at < moves.length ? d.review.at : null;   // 一起復盤：跟著對手翻到同一步
+    if (rvAt !== view) { setView(rvAt, true); if (rvAt != null && d.review.by !== S.online.red) $("roomNote").textContent = `對手翻到第 ${rvAt} 步，一起看`; }
   }, err => { NET.note = "連線中斷，重新整理頁面就會接回這盤。"; renderOnline(); });
 }
 
@@ -1244,7 +1250,7 @@ addEventListener("keydown", e => {
 function rollbackTo(k, extra) {
   token++; thinking = false;
   S.moves.splice(k); S.result = null; view = null; save(); rebuild();
-  if (S.mode === "online") pushOnline(Object.assign({ moves: S.moves.slice(), result: null, drawOffer: null, rollback: null }, extra || {}));
+  if (S.mode === "online") pushOnline(Object.assign({ moves: S.moves.slice(), result: null, drawOffer: null, rollback: null, review: null }, extra || {}));
   else maybeAi();
 }
 $("rvRollback").onclick = () => {
@@ -1258,7 +1264,6 @@ $("rvRollback").onclick = () => {
   const gm = NET.game; if (!gm || !gm.red || !gm.black) return;
   pushOnline({ rollback: { to: k, by: S.online.red, n: S.moves.length, id: Date.now() }, rollbackNote: null });
   $("roomNote").textContent = `已送出：退回到第 ${k} 步，等對手同意…`;
-  setView(null);
 };
 document.querySelectorAll("#undoSeg button").forEach(b => b.onclick = () => {
   const v = Number(b.dataset.u);
@@ -1285,13 +1290,13 @@ $("btnResign").onclick = () => ask("確定認輸？", () => {
   S.result = res; save(); renderPanel(); pushOnline({ result: res });
 });
 $("btnRematch").onclick = () => {
-  const go = () => { S.moves = []; S.result = null; view = null; save(); rebuild(); pushOnline({ moves: [], result: null, drawOffer: null, rollback: null, undos: { red: 0, black: 0 } }); };
+  const go = () => { S.moves = []; S.result = null; view = null; save(); rebuild(); pushOnline({ moves: [], result: null, drawOffer: null, rollback: null, review: null, undos: { red: 0, black: 0 } }); };
   if (inProgress()) ask("這盤還沒下完，確定重新開始？（對手的畫面也會清空）", go); else go();
 };
 $("btnSwap").onclick = () => {                                      // 還沒開始或下完一盤時：紅黑對調並清空棋盤
   const gm = NET.game; if (!gm || (S.moves.length && !gameOver())) return;
   S.moves = []; S.result = null; save(); rebuild();
-  view = null; pushOnline({ red: gm.black || null, black: gm.red || null, moves: [], result: null, drawOffer: null, rollback: null, undos: { red: 0, black: 0 } });
+  view = null; pushOnline({ red: gm.black || null, black: gm.red || null, moves: [], result: null, drawOffer: null, rollback: null, review: null, undos: { red: 0, black: 0 } });
 };
 $("btnCopy").onclick = async () => {
   const code = S.online && S.online.code; if (!code) return;
