@@ -969,10 +969,9 @@ async function connectNet() {
     if (window.NetPlay) {
       NET.db = window.NetPlay.db("xiangqi"); NET.me = window.NetPlay.me(); NET.note = ""; NET.p2p = true;
       renderOnline();
-      if (S.mode === "online" && S.online) watch(S.online.code);
-      const want = new URLSearchParams(location.search).get("room");          // 邀請連結 ?room=XXXX
+      if (S.mode === "online" && S.online) { watch(S.online.code); setRoomUrl(S.online.code); }   // F5：接回同一個房間，網址保持
+      const want = new URLSearchParams(location.search).get("room");          // 邀請連結／分享的網址 ?room=XXXX
       if (want && (!S.online || S.online.code !== want.toUpperCase())) {
-        try { history.replaceState(null, "", location.pathname); } catch (e) { }
         if (S.mode !== "online") switchMode("online");
         $("joinCode").value = want.toUpperCase(); joinRoom();
       }
@@ -1012,6 +1011,15 @@ function watch(code) {
       ask("對手提和，接受嗎？", () => pushOnline({ result: DRAW_OK, drawOffer: null }),
           () => pushOnline({ drawOffer: null }), "接受和棋", "拒絕");
     }
+    const sq = d.swapReq;                                            // 對手想交換紅黑
+    if (sq && sq.by !== S.online.red && NET.swapSeen !== sq.id) {
+      NET.swapSeen = sq.id;
+      ask("對手想交換紅黑（棋盤會清空重新開始），同意嗎？", () => doSwap(),
+          () => pushOnline({ swapReq: null, swapNote: { to: sq.by, id: sq.id, text: "對手不同意交換紅黑" } }), "同意", "不同意");
+    }
+    if (sq && sq.by === S.online.red) $("roomNote").textContent = "已送出交換紅黑的請求，等對手同意…";
+    const sn = d.swapNote;
+    if (sn && sn.to === S.online.red && NET.snSeen !== sn.id) { NET.snSeen = sn.id; $("roomNote").textContent = sn.text; }
     const rb = d.rollback;                                           // 對手想退回到某一步
     if (rb && !d.result && rb.by !== S.online.red && rb.n === (Array.isArray(d.moves) ? d.moves.length : 0) && NET.rbSeen !== rb.id) {
       NET.rbSeen = rb.id;
@@ -1081,10 +1089,14 @@ async function joinRoom() {
   enterRoom(code, red, Array.isArray(d.moves) ? d.moves : []);
 }
 
+function setRoomUrl(code) {                                          // 網址跟著房間（2026-10-17）：F5 留在房裡、網址可以直接分享
+  if (!NET.p2p) return;
+  try { const u = new URL(location.href); if (code) u.searchParams.set("room", code); else u.searchParams.delete("room"); history.replaceState(null, "", u.pathname + u.search + u.hash); } catch (e) { }
+}
 function enterRoom(code, red, moves) {
   token++; thinking = false;
   S.online = { code, red }; S.moves = moves.slice(); S.result = null; S.flipped = !red;
-  save(); drawBoard(); rebuild(); watch(code);
+  save(); drawBoard(); rebuild(); watch(code); setRoomUrl(code);
   $("lobbyNote").textContent = "";
 }
 function leaveRoom() {
@@ -1095,7 +1107,7 @@ function leaveRoom() {
     NET.db.leave(code);                                                        // 對手還在 → 房間交給他；沒人 → 房間關閉
   }
   NET.game = null; S.online = null; S.moves = []; S.result = null; S.flipped = false;
-  save(); drawBoard(); rebuild();
+  save(); drawBoard(); rebuild(); setRoomUrl(null);
 }
 
 function renderOnline() {
@@ -1113,7 +1125,7 @@ function renderOnline() {
   $("btnRematch").disabled = !gm;
   const fresh = !S.moves.length || !!gameOver();
   $("btnSwap").textContent = `換我執${S.online.red ? "黑" : "紅"}`;
-  $("btnSwap").disabled = !gm || !fresh;
+  $("btnSwap").disabled = !gm || !fresh || !!gm.swapReq;
   $("btnSwap").title = fresh ? "" : "下完這盤（或還沒開始時）才能交換";
 }
 
@@ -1293,10 +1305,17 @@ $("btnRematch").onclick = () => {
   const go = () => { S.moves = []; S.result = null; view = null; save(); rebuild(); pushOnline({ moves: [], result: null, drawOffer: null, rollback: null, review: null, undos: { red: 0, black: 0 } }); };
   if (inProgress()) ask("這盤還沒下完，確定重新開始？（對手的畫面也會清空）", go); else go();
 };
-$("btnSwap").onclick = () => {                                      // 還沒開始或下完一盤時：紅黑對調並清空棋盤
+function doSwap() {                                                  // 紅黑對調並清空棋盤（雙方都會收到）
+  const gm = NET.game; if (!gm) return;
+  S.moves = []; S.result = null; view = null; save(); rebuild();
+  pushOnline({ red: gm.black || null, black: gm.red || null, moves: [], result: null, drawOffer: null, rollback: null, review: null, swapReq: null, undos: { red: 0, black: 0 } });
+}
+$("btnSwap").onclick = () => {                                      // 還沒開始或下完一盤時才能換；對手在的話要他同意（Gabi 2026-10-17）
   const gm = NET.game; if (!gm || (S.moves.length && !gameOver())) return;
-  S.moves = []; S.result = null; save(); rebuild();
-  view = null; pushOnline({ red: gm.black || null, black: gm.red || null, moves: [], result: null, drawOffer: null, rollback: null, review: null, undos: { red: 0, black: 0 } });
+  if (!(gm.red && gm.black)) { doSwap(); return; }                   // 還沒有對手：直接換
+  if (gm.swapReq) return;                                           // 已經有一個請求在等
+  pushOnline({ swapReq: { by: S.online.red, id: Date.now() }, swapNote: null });
+  $("roomNote").textContent = "已送出交換紅黑的請求，等對手同意…";
 };
 $("btnCopy").onclick = async () => {
   const code = S.online && S.online.code; if (!code) return;
