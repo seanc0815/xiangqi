@@ -33,6 +33,16 @@
     });
     return libP;
   }
+  // 預熱（2026-10-17，Gabi：「加入的時候會有延遲」）：一切到連線對戰就先載入程式庫、向連線伺服器登記一個訪客身分，
+  // 按「加入」時直接拿來用，省掉這兩步的等待。房主還是開房時才登記（要用房號當身分）。
+  let warmPeer = null;
+  function warm() {
+    loadLib().then(() => {
+      if (warmPeer && !warmPeer.destroyed && !warmPeer.disconnected) return;
+      try { warmPeer = new window.Peer({ debug: 0 }); warmPeer.on("error", () => { }); } catch (e) { warmPeer = null; }
+    }).catch(() => { });
+  }
+  function takeWarm() { const p = warmPeer; warmPeer = null; return p && !p.destroyed && !p.disconnected ? p : null; }
   const newCode = () => Array.from({ length: 4 }, () => CHARS[(Math.random() * CHARS.length) | 0]).join("");
   const ls = {
     get(k) { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } },
@@ -193,7 +203,7 @@
           else { this.status("reconnecting", "重新連線中…"); this.retry(3000); resolve(this); }
         };
         if (!this.peer || this.peer.destroyed) {
-          const p = this.peer = new window.Peer({ debug: 0 });
+          const p = this.peer = takeWarm() || new window.Peer({ debug: 0 });
           p.on("error", e => { if (e && e.type === "peer-unavailable" && this.onPeerErr) this.onPeerErr(); });
           p.on("disconnected", () => { if (!this.closed && !p.destroyed) setTimeout(() => { try { if (p.disconnected && !p.destroyed) p.reconnect(); } catch (x) { } }, 2000); });
         }
@@ -325,7 +335,7 @@
       try {
         await r.connectGuest(true);
         // 等第一份棋局
-        for (let k = 0; k < 40 && !r.doc.data; k++) await new Promise(res => setTimeout(res, 150));
+        for (let k = 0; k < 120 && !r.doc.data; k++) await new Promise(res => setTimeout(res, 50));
         if (!r.doc.data) throw new Error("nodoc");
         enter(r); $("lnote").textContent = "";
       } catch (e) {
@@ -456,7 +466,7 @@
       for (let attempt = 0; attempt < 2 && !r; attempt++) {                     // 連線伺服器偶爾會漏接：失敗再試一次
         const t = new Room(game, code, "guest", handlersFor(code));
         try { await t.connectGuest(true); } catch (e) { t.dispose(); continue; }
-        for (let k = 0; k < 50 && !t.doc.data; k++) await new Promise(res => setTimeout(res, 150));
+        for (let k = 0; k < 150 && !t.doc.data; k++) await new Promise(res => setTimeout(res, 50));
         if (t.doc.data) r = t; else t.dispose();
       }
       if (!r) throw new Error("notfound");                                       // 找不到房間
@@ -490,5 +500,10 @@
       leave(code) { if (rooms[code]) { rooms[code].leave(); delete rooms[code]; } },
     };
   }
-  window.NetPlay = { widget, newCode, db, me };
+  // 其他棋：按「連線對戰」或點房號輸入框時預熱
+  try {
+    document.addEventListener("click", e => { if (e.target && e.target.closest && e.target.closest('[data-mode="online"]')) warm(); }, true);
+    document.addEventListener("focusin", e => { if (e.target && e.target.matches && e.target.matches('[data-n="code"], #joinCode')) warm(); }, true);
+  } catch (e) { }
+  window.NetPlay = { widget, newCode, db, me, warm };
 })();

@@ -970,6 +970,7 @@ async function connectNet() {
       NET.db = window.NetPlay.db("xiangqi"); NET.me = window.NetPlay.me(); NET.note = ""; NET.p2p = true;
       renderOnline();
       if (S.mode === "online" && S.online) { watch(S.online.code); setRoomUrl(S.online.code); }   // F5：接回同一個房間，網址保持
+      else if (S.mode === "online") window.NetPlay.warm();                    // 停在連線大廳 → 先預熱，等一下加入比較快
       const want = new URLSearchParams(location.search).get("room");          // 邀請連結／分享的網址 ?room=XXXX
       if (want && (!S.online || S.online.code !== want.toUpperCase())) {
         if (S.mode !== "online") switchMode("online");
