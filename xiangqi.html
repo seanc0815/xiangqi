@@ -801,7 +801,10 @@ function undoCount() {
 }
 
 function save() {
-  try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { }
+  // 房間資訊（在哪個房、執哪色）只存在這個分頁（sessionStorage）：同一台裝置開第二個分頁不會繼承第一個分頁的房間，
+  // 重新整理同一個分頁還是接得回來。其餘設定照舊存整個瀏覽器。（2026-10-17：之前兩個分頁會「對方紅我也紅」）
+  try { localStorage.setItem(STORE, JSON.stringify(Object.assign({}, S, { online: null }))); } catch (e) { }
+  try { if (S.online) sessionStorage.setItem(STORE + "-room", JSON.stringify(S.online)); else sessionStorage.removeItem(STORE + "-room"); } catch (e) { }
 }
 function rebuild(landed) {
   try { G = replay(S.moves); } catch (e) { S.moves = []; G = replay([]); }
@@ -971,6 +974,7 @@ async function createRoom() {
   if (!NET.db || !NET.me) { renderOnline(); return; }
   $("btnCreate").disabled = true;
   let code = null;
+  if (NET.p2p) code = newCode();                 // 點對點：房號撞到的機率極低，不先探測（探測一次要等好幾秒）
   for (let i = 0; i < 6 && !code; i++) {
     const c = newCode();
     const snap = await gameRef(c).get().catch(() => null);
@@ -997,7 +1001,7 @@ async function joinRoom() {
   else if (d.black === NET.me) red = false;
   else if (!d.black) { red = false; await gameRef(code).update({ black: NET.me, updated: Date.now() }).catch(() => null); }
   else if (!d.red) { red = true; await gameRef(code).update({ red: NET.me, updated: Date.now() }).catch(() => null); }
-  else { $("lobbyNote").textContent = "這個房間兩邊都有人了。"; return; }
+  else { $("lobbyNote").textContent = "這個房間兩邊都有人了。對方要先按「離開房間」讓出位子。"; return; }
   enterRoom(code, red, Array.isArray(d.moves) ? d.moves : []);
 }
 
@@ -1009,7 +1013,11 @@ function enterRoom(code, red, moves) {
 }
 function leaveRoom() {
   if (NET.unsub) { NET.unsub(); NET.unsub = null; }
-  if (NET.db && NET.db.leave && S.online) NET.db.leave(S.online.code);      // 點對點：關掉連線
+  if (NET.db && NET.db.leave && S.online) {                                   // 點對點（2026-10-17）
+    const code = S.online.code, mine = S.online.red ? "red" : "black", gm = NET.game;
+    if (gm && gm[mine] === NET.me) { try { gameRef(code).update({ [mine]: null, drawOffer: null, updated: Date.now() }); } catch (e) { } }   // 讓出座位，別人才進得來
+    NET.db.leave(code);                                                        // 對手還在 → 房間交給他；沒人 → 房間關閉
+  }
   NET.game = null; S.online = null; S.moves = []; S.result = null; S.flipped = false;
   save(); drawBoard(); rebuild();
 }
@@ -1160,7 +1168,7 @@ $("btnHint").onclick = () => {
 $("btnCreate").onclick = createRoom;
 $("btnJoin").onclick = joinRoom;
 $("joinCode").addEventListener("keydown", e => { if (e.key === "Enter") joinRoom(); });
-$("btnLeave").onclick = () => ask("離開這個房間？之後輸入同一個房號還能回來。", leaveRoom);
+$("btnLeave").onclick = () => ask(NET.p2p ? "離開這個房間？對手還在的話房間會留給他，沒人的話房間就關閉。" : "離開這個房間？之後輸入同一個房號還能回來。", leaveRoom);
 $("btnResign").onclick = () => ask("確定認輸？", () => {
   const res = { winRed: !S.online.red, why: (S.online.red ? "紅方" : "黑方") + "認輸" };
   S.result = res; save(); renderPanel(); pushOnline({ result: res });
@@ -1189,6 +1197,8 @@ function start(data) {
   let st = data && data.S;
   if (!st) { try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { st = null; } }
   S = Object.assign(defaults(), st || {});
+  if (!data) { try { S.online = JSON.parse(sessionStorage.getItem(STORE + "-room") || "null") || S.online || null; } catch (e) { } }
+  if (S.mode === "online" && !S.online) { S.moves = []; S.result = null; S.flipped = false; }     // 新分頁：回到大廳
   if (!Array.isArray(S.moves)) S.moves = [];
   //  不在 claude.ai 上、也載不到 net.js → 連線對戰整個藏起來（有 net.js 就用兩支手機直接連線）
   if (!(window.claude && window.claude.use) && !window.NetPlay) {

@@ -39,6 +39,13 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } },
     del(k) { try { localStorage.removeItem(k); } catch (e) { } },
   };
+  // 房間存檔用 sessionStorage：每個分頁各自一份（重新整理還在；關掉分頁就沒了；另一個分頁看不到）。
+  // 2026-10-17 之前用 localStorage，同一台裝置開兩個分頁會互相覆蓋、一邊離開會把另一邊的存檔也刪掉。
+  const ss = {
+    get(k) { try { return JSON.parse(sessionStorage.getItem(k) || "null"); } catch (e) { return null; } },
+    set(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch (e) { } },
+    del(k) { try { sessionStorage.removeItem(k); } catch (e) { } },
+  };
 
   /* ───── 房間（只管傳輸與同步） ───── */
   class Room {
@@ -60,7 +67,7 @@
     }
     pid() { return PREFIX + this.game + "-" + this.code; }
     key() { return "bbx-room-" + this.game; }
-    persist() { ls.set(this.key(), { code: this.code, role: this.role, doc: this.doc, gid: this.gid, seq: this.seq, pending: this.pending, seen: this.seen }); }
+    persist() { ss.set(this.key(), { code: this.code, role: this.role, doc: this.doc, gid: this.gid, seq: this.seq, pending: this.pending, seen: this.seen, tab: tabId() }); }
     restore(s) {
       this.doc = s.doc || { v: 0, data: null };
       if (s.gid) this.gid = s.gid;
@@ -102,7 +109,8 @@
           }
           this.send(this.docMsg(), c);
         } else if (m.t === "hello") this.send(this.docMsg(), c);
-      } else if (m.t === "doc") {
+      } else if (m.t === "handoff") { this.takeOver(m); return; }
+      else if (m.t === "doc") {
         if (!(m.v >= this.doc.v)) return;
         const ack = m.ack;
         if (!ack) this.pending = [];                                          // 舊版主機不回條：不疊
@@ -218,7 +226,29 @@
       try { this.peer && this.peer.destroy(); } catch (e) { }
     }
     dispose() { this.shut(); }       // 只關連線，不清掉存檔（試探房間失敗時用）
-    close() { this.shut(); ls.del(this.key()); }
+    close() { this.shut(); ss.del(this.key()); }
+    // 離開房間（2026-10-17，Gabi：「離開後房間就要刪掉，除非裡面有人」）
+    // 對手還連著 → 把整份棋局交給他，他變成主機、房號不變；沒人 → 直接關，房號失效。存檔一律清掉，不會自動接回。
+    leave() {
+      if (this.closed) return;
+      const c = this.conn, live = !!(c && c.open);
+      if (live && this.role === "host") this.send({ t: "handoff", v: this.doc.v, data: this.doc.data }, c);
+      this.conn = null;
+      if (live) setTimeout(() => this.close(), 200); else this.close();     // 讓最後的訊息送出去
+    }
+    takeOver(m) {                    // 訪客收到主機交棒：接手當主機
+      if (this.role !== "guest" || this.closed) return;
+      const data = Object.assign({}, m.data || this.doc.data);
+      if (typeof data.hostSeat === "number") data.hostSeat = 1 - data.hostSeat;   // 共用元件的座位是「主機是哪一邊」→ 翻過來才不會換位子
+      this.doc = { v: (m.v || this.doc.v) + 1, data }; this.pending = []; this.seen = { g: null, s: 0 };
+      clearTimeout(this.retryT); this.retryT = null; this.busy = null;
+      const c = this.conn; this.conn = null; try { c && c.close(); } catch (e) { }
+      try { this.peer && this.peer.destroy(); } catch (e) { } this.peer = null;
+      this.role = "host"; this.persist();
+      this.status("waiting", "對方離開了，房間交給你；把房號給新對手就能繼續");
+      setTimeout(() => { if (!this.closed) this.startHost(null, false).catch(() => { }); }, 500);
+      this.fire(true);
+    }
   }
 
   /* ───── 每個棋共用的介面（大廳、房間、請求確認） ───── */
@@ -305,7 +335,7 @@
       $("join").disabled = false;
     }
     function leave(silent) {
-      if (room) room.close();
+      if (room) room.leave();
       room = null; seat = null; lastReqSeen = null; swapNote = "";
       A.onLeave && A.onLeave();
       if (!silent) render();
@@ -364,7 +394,7 @@
       room.update({ req: null, reqNote: { to: req.by, id: Date.now(), text: { undo: "對方不同意悔棋", new: "對方不同意重開", draw: "對方拒絕和棋" }[req.type] } });
     };
     // 重新整理後接回同一盤；或網址帶 ?room=XXXX 自動加入
-    const saved = ls.get("bbx-room-" + o.game);
+    const saved = ss.get("bbx-room-" + o.game);
     const urlRoom = new URLSearchParams(location.search).get("room");
     setTimeout(async () => {
       if (urlRoom && (!saved || saved.code !== urlRoom.toUpperCase())) {
@@ -393,10 +423,17 @@
   }
   /* ───── 給象棋用：跟 claude.ai 共用資料庫一樣的介面（doc().get/set/update/onSnapshot），底下換成點對點 ─────
      象棋原本的連線程式完全照舊；不在 claude.ai 上時把 NET.db 換成這個。                                         */
+  // 每個分頁一個識別碼（2026-10-17）：同一個瀏覽器開兩個分頁算兩個人；重新整理同一個分頁還是同一個人。
+  // 以前整個瀏覽器共用一個，自己開房再從另一個分頁加入會被當成「房主回來」→ 兩邊都是紅、或找不到房間。
+  function tabId() {
+    let t = null;
+    try { t = sessionStorage.getItem("bbx-tab"); if (!t) { t = Math.random().toString(36).slice(2, 8); sessionStorage.setItem("bbx-tab", t); } } catch (e) { t = "x"; }
+    return t;
+  }
   function me() {
     let v = ls.get("bbx-me");
     if (!v) { v = Math.random().toString(36).slice(2, 10); ls.set("bbx-me", v); }
-    return v;
+    return v + "-" + tabId();
   }
   function db(game) {
     const rooms = {};                 // code → Room
@@ -408,16 +445,21 @@
     });
     async function ensure(code) {
       if (rooms[code]) return rooms[code];
-      const saved = ls.get("bbx-room-" + game);
-      if (saved && saved.code === code) {                     // 重新整理：接回原本的角色
+      const saved = ss.get("bbx-room-" + game);
+      if (saved && saved.code === code) {   // 重新整理：接回原本的角色（只限原本那個分頁）
         const r = new Room(game, code, saved.role, handlersFor(code)).restore(saved);
         rooms[code] = r;
         if (saved.role === "host") r.startHost(null, false).catch(() => { }); else r.connectGuest(false).catch(() => { });
         return r;
       }
-      const r = new Room(game, code, "guest", handlersFor(code));
-      try { await r.connectGuest(true); } catch (e) { r.dispose(); throw e; }     // 找不到房間
-      for (let k = 0; k < 40 && !r.doc.data; k++) await new Promise(res => setTimeout(res, 150));
+      let r = null;
+      for (let attempt = 0; attempt < 2 && !r; attempt++) {                     // 連線伺服器偶爾會漏接：失敗再試一次
+        const t = new Room(game, code, "guest", handlersFor(code));
+        try { await t.connectGuest(true); } catch (e) { t.dispose(); continue; }
+        for (let k = 0; k < 50 && !t.doc.data; k++) await new Promise(res => setTimeout(res, 150));
+        if (t.doc.data) r = t; else t.dispose();
+      }
+      if (!r) throw new Error("notfound");                                       // 找不到房間
       rooms[code] = r;
       return r;
     }
@@ -445,7 +487,7 @@
           },
         };
       },
-      leave(code) { if (rooms[code]) { rooms[code].close(); delete rooms[code]; } },
+      leave(code) { if (rooms[code]) { rooms[code].leave(); delete rooms[code]; } },
     };
   }
   window.NetPlay = { widget, newCode, db, me };
