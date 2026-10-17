@@ -24,7 +24,9 @@ self.addEventListener("fetch", e => {
   }
   if (new URL(url).origin !== self.location.origin) return;
   // 自己的檔案：先試網路（3 秒），失敗就用快取；成功就順便更新快取
-  e.respondWith(Promise.race([fetch(req), timeout(3000)]).then(r => {
+  // cache:"no-cache" → 一定向伺服器確認有沒有新版（2026-10-17：GitHub 的 10 分鐘快取讓手機一直拿到舊版）
+  const fresh = req.mode === "navigate" ? fetch(req.url, { cache: "no-cache", credentials: "same-origin" }) : fetch(req, { cache: "no-cache" });
+  e.respondWith(Promise.race([fresh, timeout(3000)]).then(r => {
     if (r && r.ok) { const cp = r.clone(); caches.open(V).then(c => c.put(req, cp)); }
     return r;
   }).catch(() => caches.match(req, { ignoreSearch: true })
