@@ -754,7 +754,10 @@ function renderPanel() {
       rows += `<tr class="${i + 2 >= h.length && view == null ? "last" : ""}"><td class="n">${i / 2 + 1}.</td><td class="r${c1}" data-k="${i + 1}">${h[i].note}</td><td class="k${c2}" data-k="${i + 2}">${h[i + 1] ? h[i + 1].note : ""}</td></tr>`;
     }
     const box = $("moves"); box.innerHTML = `<table>${rows}</table>`;
-    const el = box.querySelector("td.cur"); if (el) el.scrollIntoView({ block: "nearest" }); else box.scrollTop = box.scrollHeight;
+    // 只捲棋譜框裡面，不動整個網頁（2026-10-17：scrollIntoView 會讓手機畫面每走一步就跳到棋譜）
+    const el = box.querySelector("td.cur");
+    if (view == null || !el) box.scrollTop = box.scrollHeight;
+    else { const br = box.getBoundingClientRect(), er = el.getBoundingClientRect(); if (er.top < br.top || er.bottom > br.bottom) box.scrollTop += er.top - br.top - br.height / 2 + er.height / 2; }
   }
   const n = S.moves.length;
   $("rvFirst").disabled = $("rvPrev").disabled = !n || cur === 0;
