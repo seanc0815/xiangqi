@@ -1,0 +1,548 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="棋盤小館"><meta name="theme-color" content="#131917"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon.png"><link rel="icon" href="icon.png"><style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style><script>if('serviceWorker' in navigator&&(location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname)))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))</script><title>步步為營</title>
+<style>
+  /* 步步為營（Quoridor，2026-10-19，Gabi：「走到對面就贏，但是可以放一根一根的東西來擋路，兩邊都會擋到」） */
+  :root {
+    --ground: #e7ece4; --panel: #f5f7f2; --ink: #1d2723; --muted: #5d6b64; --rule: #cbd4cb;
+    --jade: #2e7a67; --jade-soft: rgba(46, 122, 103, .16); --accent: #b0261d;
+    --cell: #d9c39a; --cell-b: #c4a874; --wall: #6b3f1d; --p1: #b0261d; --p2: #2e5fa8;
+    --f-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #131917; --panel: #1b2320; --ink: #e2e9e4; --muted: #95a59d; --rule: #2b3732;
+      --jade: #5fb59d; --jade-soft: rgba(95, 181, 157, .18); --accent: #e0574b; --cell: #b79c6c; --cell-b: #9c8054; --wall: #f0d9a8;
+      --p1: #e0574b; --p2: #6b9be0; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --ground: #131917; --panel: #1b2320; --ink: #e2e9e4; --muted: #95a59d; --rule: #2b3732;
+    --jade: #5fb59d; --jade-soft: rgba(95, 181, 157, .18); --accent: #e0574b; --cell: #b79c6c; --cell-b: #9c8054; --wall: #f0d9a8;
+    --p1: #e0574b; --p2: #6b9be0; color-scheme: dark; }
+  [hidden] { display: none !important; }
+  html, body { background: var(--ground); color: var(--ink); }
+  body { font-family: var(--f-body); font-size: 15px; line-height: 1.55; padding-inline: 16px; padding-block: 18px 28px; margin: 0; }
+  .wrap { max-width: 1000px; margin: 0 auto; display: grid; gap: 22px; grid-template-columns: minmax(0, 560px) minmax(0, 340px); justify-content: center; align-items: start; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 560px); } }
+  header.top { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  header.top h1 { font-weight: 900; font-size: clamp(30px, 6vw, 40px); line-height: 1; margin: 0; letter-spacing: .06em; }
+  header.top p { margin: 0; color: var(--muted); font-size: 13px; flex: 1 1 220px; }
+  a.home { margin-left: auto; color: var(--muted); text-decoration: none; font-size: 14px; border: 1px solid var(--rule); border-radius: 999px; padding: 5px 14px; }
+  .stage { position: relative; display: grid; gap: 8px; }
+  svg#board { width: 100%; height: auto; display: block; touch-action: manipulation; user-select: none; -webkit-user-select: none; border-radius: 12px; background: var(--panel); border: 1px solid var(--rule); }
+  .tray { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); min-height: 22px; }
+  .tray .who { font-weight: 700; color: var(--ink); min-width: 4.5em; }
+  .tray .sticks { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tray .stick { width: 6px; height: 20px; border-radius: 2px; background: var(--wall); }
+  .tray .stick.used { opacity: .15; }
+  .tray.turn .who::after { content: " ●"; color: var(--jade); }
+  .fx { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  .stamp { display: grid; justify-items: center; gap: 6px; transform: rotate(-6deg); color: var(--accent); animation: stampIn .42s cubic-bezier(.2,.9,.3,1.25) both; }
+  .stamp .big { font-family: "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif; font-weight: 900; font-size: clamp(56px, 15vw, 100px); line-height: 1; letter-spacing: .08em;
+    text-shadow: 3px 0 0 #fff6ea, -3px 0 0 #fff6ea, 0 3px 0 #fff6ea, 0 -3px 0 #fff6ea, 0 8px 18px rgba(0,0,0,.45); }
+  .stamp .small { font-weight: 700; font-size: 15px; color: #fff6ea; background: rgba(27, 29, 28, .8); padding: 3px 14px; border-radius: 999px; }
+  @keyframes stampIn { 0% { opacity: 0; transform: scale(2.2) rotate(-16deg); } 60% { opacity: 1; transform: scale(.94) rotate(-5deg); } 100% { opacity: 1; transform: scale(1) rotate(-6deg); } }
+  @media (prefers-reduced-motion: reduce) { .stamp { animation: none; } }
+  aside.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; display: grid; gap: 16px; min-width: 0; }
+  .status .msg { font-weight: 700; font-size: 17px; } .status .sub { color: var(--muted); font-size: 13px; }
+  .group { display: grid; gap: 6px; } .label { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+  .seg { display: flex; border: 1px solid var(--rule); border-radius: 9px; overflow: hidden; }
+  .seg button { flex: 1; background: transparent; border: 0; color: var(--muted); font: inherit; font-size: 14px; padding: 7px 0; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--rule); }
+  .seg button[aria-pressed="true"] { background: var(--jade-soft); color: var(--ink); font-weight: 700; }
+  .seg button:disabled { opacity: .45; cursor: default; }
+  .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .btn { font: inherit; font-size: 14px; padding: 8px 6px; border-radius: 9px; border: 1px solid var(--rule); background: var(--ground); color: var(--ink); cursor: pointer; }
+  .btn.primary { background: var(--jade); border-color: var(--jade); color: #fff; font-weight: 700; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--jade); outline-offset: 2px; }
+  .confirm { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+  .confirm .btn { font-size: 13px; padding: 4px 10px; }
+  .score { display: flex; gap: 14px; font-size: 14px; color: var(--muted); } .score b { color: var(--ink); }
+  .tool { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .tool .btn[aria-pressed="true"] { background: var(--jade-soft); border-color: var(--jade); font-weight: 700; }
+  details.rules { border-top: 1px solid var(--rule); padding-top: 10px; font-size: 14px; }
+  details.rules summary { cursor: pointer; font-weight: 700; }
+  details.rules li { margin: 4px 0; } details.rules ul { padding-left: 1.2em; margin: 8px 0; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>步步為營</h1>
+    <p>先把棋子走到對面那一排就贏。每人有 10 片牆，可以擋對手的路，但也可能擋到自己。</p>
+    <a class="home" href="./">← 全部棋類</a>
+  </header>
+  <div class="stage">
+    <div class="tray" id="trayTop"></div>
+    <div style="position:relative">
+      <svg id="board" viewBox="0 0 640 640" role="img" aria-label="步步為營棋盤"></svg>
+      <div class="fx" id="fx" aria-live="assertive"></div>
+    </div>
+    <div class="tray" id="trayBot"></div>
+  </div>
+  <aside class="panel">
+    <div class="status" aria-live="polite"><div class="msg" id="msg"></div><div class="sub" id="sub"></div></div>
+    <div class="group"><span class="label">這一手</span>
+      <div class="tool"><button class="btn" id="toolMove">走棋子</button><button class="btn" id="toolWall">放牆</button></div>
+      <div class="confirm" id="wallBar" hidden><span id="wallText">點棋盤上的格線放牆</span><button class="btn" id="wallRot">轉向</button><button class="btn primary" id="wallOk">放下</button></div>
+    </div>
+    <div class="score" id="score"></div>
+    <div class="group"><span class="label">玩法</span>
+      <div class="seg" id="modeSeg"><button data-mode="local">雙人同機</button><button data-mode="ai">對電腦</button><button data-mode="online">連線對戰</button></div></div>
+    <div class="group" id="netBox" hidden></div>
+    <div class="group" id="aiOpts"><span class="label">我是</span>
+      <div class="seg" id="sideSeg"><button data-first="1">紅（先走）</button><button data-first="0">藍</button></div>
+      <span class="label" style="margin-top:6px">電腦棋力</span>
+      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">中等</button><button data-lv="2">困難</button></div></div>
+    <div class="group" id="faceOpt"><span class="label">雙人同機</span>
+      <div class="seg" id="faceSeg"><button data-face="0">一般</button><button data-face="1">面對面（上方字倒過來）</button></div></div>
+    <div class="actions">
+      <button class="btn primary" id="btnNew">新局</button><button class="btn" id="btnUndo">悔棋</button><button class="btn" id="btnGiveUp">認輸</button>
+    </div>
+    <div class="confirm" id="confirm" hidden><span id="confirmText"></span><button class="btn primary" id="confirmYes">確定</button><button class="btn" id="confirmNo">取消</button></div>
+    <details class="rules"><summary>玩法說明</summary>
+      <ul>
+        <li>棋盤 9 × 9。紅從下面中間出發、要走到最上面一排；藍從上面出發、要走到最下面一排。<b>先到的贏</b>，紅先走。</li>
+        <li>每一手二選一：<b>走一步</b>（上下左右一格，不能斜走），或<b>放一片牆</b>。</li>
+        <li>每片牆長兩格，放在格子之間的溝上，橫的直的都可以。牆會擋住<b>雙方</b>。每人共 10 片，放下去就不能拿回來。</li>
+        <li>牆不能重疊，也不能跟另一片牆十字交叉。</li>
+        <li><b>不能把路完全封死</b>：放完以後，兩個人都必須還有路可以走到終點（繞遠路沒關係）。放不下的位置會顯示紅色。</li>
+        <li>兩顆棋子面對面相鄰時，可以<b>跳過</b>對方；如果對方後面是牆或邊界，就改成往對方的左邊或右邊斜跳。</li>
+        <li>操作：先選「走棋子」或「放牆」。走棋子時，點亮起來的格子；放牆時，點格子邊緣的溝，再點一次（或按「放下」）確定，「轉向」可以換成直的或橫的。</li>
+        <li>小技巧：牆不要太早用完；看「到終點還要幾步」（棋盤兩側的數字），差一步就差很多。</li>
+      </ul>
+    </details>
+  </aside>
+</div>
+
+<script src="net.js"></script>
+<script>
+let NETP = null;
+/* ───────── 規則與電腦 ─────────
+   格子 cell = r*9+c（r=0 最上面）。牆的錨點 a = r*8+c（0..63）＝格子 (r,c)(r,c+1)(r+1,c)(r+1,c+1) 中間的交叉點。
+   橫牆 H[a]：擋住 (r,c)↔(r+1,c) 和 (r,c+1)↔(r+1,c+1)；直牆 V[a]：擋住 (r,c)↔(r,c+1) 和 (r+1,c)↔(r+1,c+1)。
+   棋步字串：「m40」走到格子 40；「h12」「v12」在錨點 12 放橫／直牆。p=0 紅（從 r=8 走到 r=0），p=1 藍（r=0 → r=8）。 */
+function QENGINE() {
+  const N = 9, M = 8, GOAL = [0, 8];
+  function fresh() { return { pos: [76, 4], walls: [10, 10], H: new Uint8Array(64), V: new Uint8Array(64), turn: 0 }; }
+  function clone(s) { return { pos: s.pos.slice(), walls: s.walls.slice(), H: s.H.slice(), V: s.V.slice(), turn: s.turn }; }
+  /* 從格子 x 往方向 d（0 上 1 下 2 左 3 右）能不能走（只看牆和邊界） */
+  function open(s, x, d) {
+    const r = (x / N) | 0, c = x % N;
+    if (d === 0) return r > 0 && !(c < M && s.H[(r - 1) * M + c]) && !(c > 0 && s.H[(r - 1) * M + c - 1]);
+    if (d === 1) return r < M && !(c < M && s.H[r * M + c]) && !(c > 0 && s.H[r * M + c - 1]);
+    if (d === 2) return c > 0 && !(r < M && s.V[r * M + c - 1]) && !(r > 0 && s.V[(r - 1) * M + c - 1]);
+    return c < M && !(r < M && s.V[r * M + c]) && !(r > 0 && s.V[(r - 1) * M + c]);
+  }
+  const STEP = [-N, N, -1, 1];
+  /* 到終點那一排的步數（不管棋子，只看牆）；-1＝走不到 */
+  const Q = new Int16Array(81);
+  function distMap(s, p) {
+    const d = new Int8Array(81).fill(-1); let h = 0, t = 0;
+    const gr = GOAL[p];
+    for (let c = 0; c < N; c++) { d[gr * N + c] = 0; Q[t++] = gr * N + c; }
+    while (h < t) {
+      const x = Q[h++];
+      for (let k = 0; k < 4; k++) if (open(s, x, k)) { const y = x + STEP[k]; if (d[y] < 0) { d[y] = d[x] + 1; Q[t++] = y; } }
+    }
+    return d;
+  }
+  const dist = (s, p) => distMap(s, p)[s.pos[p]];
+  function pawnMoves(s, p) {
+    const me = s.pos[p], op = s.pos[1 - p], out = [];
+    for (let k = 0; k < 4; k++) {
+      if (!open(s, me, k)) continue;
+      const y = me + STEP[k];
+      if (y !== op) { out.push(y); continue; }
+      if (open(s, op, k)) out.push(op + STEP[k]);                      // 直跳
+      else for (const j of (k < 2 ? [2, 3] : [0, 1])) if (open(s, op, j)) out.push(op + STEP[j]);   // 斜跳
+    }
+    return out;
+  }
+  /* 牆能不能放：沒重疊、沒十字交叉、雙方都還有路 */
+  function wallFits(s, o, a) {
+    const r = (a / M) | 0, c = a % M;
+    if (s.H[a] || s.V[a]) return false;
+    if (o === 0) { if ((c > 0 && s.H[a - 1]) || (c < M - 1 && s.H[a + 1])) return false; }
+    else { if ((r > 0 && s.V[a - M]) || (r < M - 1 && s.V[a + M])) return false; }
+    return true;
+  }
+  function wallLegal(s, o, a) {
+    if (!wallFits(s, o, a)) return false;
+    const A = o === 0 ? s.H : s.V; A[a] = 1;
+    const ok = dist(s, 0) >= 0 && dist(s, 1) >= 0;
+    A[a] = 0; return ok;
+  }
+  function parse(m) { return { k: m[0], x: +m.slice(1) }; }
+  function legal(s, m) {
+    const { k, x } = parse(m), p = s.turn;
+    if (k === "m") return pawnMoves(s, p).includes(x);
+    if (s.walls[p] <= 0 || !(x >= 0 && x < 64)) return false;
+    return wallLegal(s, k === "h" ? 0 : 1, x);
+  }
+  function apply(s, m) {         // 直接改 s（呼叫前先確認合法）
+    const { k, x } = parse(m), p = s.turn;
+    if (k === "m") s.pos[p] = x;
+    else { (k === "h" ? s.H : s.V)[x] = 1; s.walls[p]--; }
+    s.turn = 1 - p;
+  }
+  const winner = s => (((s.pos[0] / N) | 0) === 0 ? 0 : ((s.pos[1] / N) | 0) === 8 ? 1 : -1);
+
+  /* ── 電腦：alpha-beta。候選牆＝擋在對手最短路上的牆（和旁邊錯開一格的）＋擋在自己路前面的對手牆位 ── */
+  function pathCells(s, p, dm) {        // 沿著距離遞減走到終點的一條最短路
+    const out = [s.pos[p]]; let x = s.pos[p];
+    while (dm[x] > 0) {
+      let nx = -1;
+      for (let k = 0; k < 4; k++) if (open(s, x, k) && dm[x + STEP[k]] === dm[x] - 1) { nx = x + STEP[k]; break; }
+      if (nx < 0) break; out.push(nx); x = nx;
+    }
+    return out;
+  }
+  function blockers(path, add) {        // 擋住路上每一步的牆
+    for (let i = 0; i + 1 < path.length; i++) {
+      const a = path[i], b = path[i + 1], ra = (a / N) | 0, ca = a % N, rb = (b / N) | 0, cb = b % N;
+      if (ca === cb) { const r = Math.min(ra, rb); for (const c of [ca - 2, ca - 1, ca, ca + 1]) if (c >= 0 && c < M) add("h", r * M + c); }
+      else { const c = Math.min(ca, cb); for (const r of [ra - 2, ra - 1, ra, ra + 1]) if (r >= 0 && r < M) add("v", r * M + c); }
+    }
+  }
+  function genMoves(s, dms, wide) {
+    const p = s.turn, out = [];
+    const myD = dms[p];
+    const pm = pawnMoves(s, p).sort((a, b) => myD[a] - myD[b]);
+    for (const x of pm) out.push("m" + x);
+    if (s.walls[p] > 0) {
+      const seen = new Set();
+      const add = (k, a) => { const m = k + a; if (!seen.has(m)) { seen.add(m); if (wallFits(s, k === "h" ? 0 : 1, a)) out.push(m); } };
+      const opPath = pathCells(s, 1 - p, dms[1 - p]);
+      blockers(wide ? opPath : opPath.slice(0, 6), add);
+      if (wide) blockers(pathCells(s, p, myD).slice(0, 4), add);    // 自保：先佔住對手可能擋我的位置
+    }
+    return out;
+  }
+  const WIN = 10000;
+  function evalFor(s, p, dms) {
+    const me = dms[p][s.pos[p]], op = dms[1 - p][s.pos[1 - p]];
+    if (s.walls[0] + s.walls[1] === 0) return (me <= op ? 1 : -1) * (500 + 10 * Math.abs(op - me));   // 牆都用完 → 純賽跑（輪到的人先走）
+    let v = (op - me) * 10 + (s.walls[p] - s.walls[1 - p]) * 4;
+    if (s.walls[1 - p] === 0 && me <= op) v += 200;          // 對手沒牆了、我跑得比較快 → 幾乎贏定
+    return v + 5;                                              // 輪到的一方多半步
+  }
+  let nodes = 0, deadline = 0, stop = false;
+  function negamax(s, depth, alpha, beta) {
+    if ((++nodes & 1023) === 0 && Date.now() > deadline) stop = true;
+    if (stop) return 0;
+    const w = winner(s);
+    if (w >= 0) return w === s.turn ? WIN + depth : -WIN - depth;
+    const dms = [distMap(s, 0), distMap(s, 1)];
+    if (depth === 0) return evalFor(s, s.turn, dms);
+    let best = -1e9;
+    for (const m of genMoves(s, dms, false)) {
+      const t = clone(s); apply(t, m);
+      if (m[0] !== "m" && (dist(t, 0) < 0 || dist(t, 1) < 0)) continue;
+      const v = -negamax(t, depth - 1, -beta, -alpha);
+      if (stop) return 0;
+      if (v > best) best = v;
+      if (v > alpha) alpha = v;
+      if (alpha >= beta) break;
+    }
+    return best === -1e9 ? evalFor(s, s.turn, dms) : best;
+  }
+  function stateOf(moves) { const s = fresh(); for (const m of moves) apply(s, m); return s; }
+  function search(moves, maxDepth, time) {
+    const s = stateOf(moves);
+    nodes = 0; stop = false; deadline = Date.now() + time;
+    const dms = [distMap(s, 0), distMap(s, 1)];
+    const cand = genMoves(s, dms, true).filter(m => m[0] === "m" || legal(s, m));
+    for (const m of cand) if (m[0] === "m") { const t = clone(s); apply(t, m); if (winner(t) === s.turn) return { move: m, scores: [[m, WIN]], depth: 0 }; }
+    let scores = cand.map(m => [m, 0]), reached = 0;
+    for (let d = 1; d <= maxDepth; d++) {
+      const sc = []; let alpha = -1e9;
+      for (const [m] of scores) {
+        const t = clone(s); apply(t, m);
+        const v = -negamax(t, d - 1, -1e9, -alpha + 1);
+        if (stop) break;
+        sc.push([m, v]); if (v > alpha) alpha = v;
+      }
+      if (stop) break;
+      sc.sort((a, b) => b[1] - a[1]); scores = sc; reached = d;
+      if (Math.abs(sc[0][1]) > WIN / 2) break;
+    }
+    return { move: scores[0][0], scores, depth: reached };
+  }
+  return { N, M, fresh, clone, open, distMap, dist, pawnMoves, wallFits, wallLegal, legal, apply, winner, stateOf, search };
+}
+
+const E = QENGINE();
+const $ = id => document.getElementById(id);
+const svg = $("board"), NS = "http://www.w3.org/2000/svg", STORE = "quoridor-v1";
+let S = null, G = null, thinking = false, token = 0, pending = null, tool = "move", ghost = null;
+const name = p => (p === 0 ? "紅" : "藍");
+const MAXPLY = 300;               // 太久沒分出勝負（互相繞圈）算和局
+function defaults() { return { mode: "ai", humanFirst: true, level: 1, face: 0, moves: [], over: null, tally: { r: 0, b: 0, d: 0 } }; }
+function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { } }
+function replay() {
+  const s = E.fresh();
+  for (const m of S.moves) { if (!E.legal(s, m)) break; E.apply(s, m); }
+  s.result = E.winner(s);
+  if (s.result < 0 && S.moves.length >= MAXPLY) s.result = 2;
+  return s;
+}
+const humanTurn = () => S.mode === "online" ? !!(NETP && NETP.myTurn()) : (S.mode === "local" || (G.turn === 0) === S.humanFirst);
+const aiTurn = () => S.mode === "ai" && !S.over && !humanTurn();
+const tallyAdd = (r, k) => { if (r === 2) S.tally.d += k; else if (r === 0) S.tally.r += k; else S.tally.b += k; };
+function play(m) {
+  if (!E.legal(G, m)) return false;
+  S.moves.push(m); G = replay(); ghost = null; tool = "move";
+  if (G.result >= 0) finish(G.result);
+  if (S.mode === "online" && NETP) NETP.push();
+  save(); render(); maybeAi();
+  return true;
+}
+function finish(r) {
+  S.over = { r };
+  tallyAdd(r, 1);
+  stamp(r === 2 ? "和局" : `${name(r)}贏`, S.mode === "ai" && r !== 2 ? ((r === 0) === S.humanFirst ? "你贏了" : "電腦贏了") : "");
+}
+function stamp(big, small) {
+  const box = $("fx"); box.innerHTML = "";
+  const d = document.createElement("div"); d.className = "stamp";
+  d.innerHTML = `<span class="big">${big}</span>` + (small ? `<span class="small">${small}</span>` : "");
+  box.appendChild(d);
+}
+
+let worker = null;
+try { worker = new Worker(URL.createObjectURL(new Blob([`const E=(${QENGINE.toString()})();onmessage=e=>{const d=e.data;postMessage({id:d.id,r:E.search(d.moves,d.depth,d.time)});};`], { type: "text/javascript" }))); } catch (e) { worker = null; }
+let reqId = 0; const waiting = new Map();
+if (worker) worker.onmessage = e => { const cb = waiting.get(e.data.id); waiting.delete(e.data.id); if (cb) cb(e.data.r); };
+const LV = [{ depth: 1, time: 300, noise: 0.35 }, { depth: 3, time: 1000, noise: 0.08 }, { depth: 5, time: 3000, noise: 0 }];   // 10-19 自對戰：困難 5:1 中等、中等 6:0 入門
+function maybeAi() {
+  if (!aiTurn()) return;
+  thinking = true; render();
+  const my = token, L = LV[S.level], id = ++reqId, t0 = Date.now();
+  const done = r => {
+    if (my !== token) return;
+    setTimeout(() => {
+      if (my !== token) return;
+      thinking = false;
+      let m = r.move;
+      if (Math.random() < L.noise && r.scores.length > 1) {         // 入門偶爾走次佳（但不走明顯會輸的）
+        const top = r.scores[0][1], ok = r.scores.filter(x => x[1] > top - 25 && x[1] > -5000);
+        if (ok.length > 1) m = ok[1 + ((Math.random() * (ok.length - 1)) | 0)][0];
+      }
+      if (!play(m)) { const pm = E.pawnMoves(G, G.turn); if (pm.length) play("m" + pm[0]); }
+    }, Math.max(0, 400 - (Date.now() - t0)));
+  };
+  if (worker) { waiting.set(id, done); worker.postMessage({ id, moves: S.moves.slice(), depth: L.depth, time: L.time }); }
+  else setTimeout(() => done(E.search(S.moves.slice(), Math.min(L.depth, 2), 800)), 30);
+}
+
+/* ───────── 畫面 ───────── */
+const PAD = 22, CELL = 54, GAP = 12, PITCH = CELL + GAP;   // 22 + 9*54 + 8*12 + 22 ≈ 626
+const flip = () => S.mode === "ai" ? !S.humanFirst : S.mode === "online" ? !!(NETP && NETP.active() && NETP.mySeat() === 1) : false;
+const vr = r => (flip() ? 8 - r : r), vc = c => (flip() ? 8 - c : c);
+const cx = c => PAD + vc(c) * PITCH + CELL / 2, cy = r => PAD + vr(r) * PITCH + CELL / 2;
+function el(t, a, p) { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; }
+function wallRect(o, a) {            // 牆在畫面上的位置（考慮翻轉）
+  const r = (a / 8) | 0, c = a % 8;
+  const x0 = Math.min(cx(c), cx(c + 1)), y0 = Math.min(cy(r), cy(r + 1));
+  const mx = x0 + PITCH / 2, my = y0 + PITCH / 2, L = 2 * CELL + GAP;
+  return o === 0 ? { x: mx - L / 2, y: my - GAP / 2 + 1.5, width: L, height: GAP - 3 } : { x: mx - GAP / 2 + 1.5, y: my - L / 2, width: GAP - 3, height: L };
+}
+function draw() {
+  svg.innerHTML = "";
+  const defs = el("defs", {}, svg);
+  const mk = (id, a, b) => { const g = el("radialGradient", { id, cx: ".38", cy: ".32", r: ".75" }, defs); el("stop", { offset: 0, "stop-color": a }, g); el("stop", { offset: 1, "stop-color": b }, g); };
+  mk("g0", "#f26a5d", "#a3221a"); mk("g1", "#7fb0f2", "#234f94");
+  el("rect", { x: 0, y: 0, width: 640, height: 640, fill: "var(--panel)" }, svg);
+  // 終點排的底色
+  for (const p of [0, 1]) { const r = p === 0 ? 0 : 8; el("rect", { x: PAD - 6, y: cy(r) - CELL / 2 - 6, width: 9 * PITCH - GAP + 12, height: CELL + 12, rx: 10, fill: p === 0 ? "var(--p1)" : "var(--p2)", opacity: .14 }, svg); }
+  const dm = [E.distMap(G, 0), E.distMap(G, 1)];
+  const canAct = !S.over && !thinking && humanTurn();
+  const targets = canAct && tool === "move" ? new Set(E.pawnMoves(G, G.turn)) : new Set();
+  for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
+    const x = r * 9 + c, t = targets.has(x);
+    el("rect", { x: cx(c) - CELL / 2, y: cy(r) - CELL / 2, width: CELL, height: CELL, rx: 7, fill: "var(--cell)", stroke: "var(--cell-b)", "stroke-width": 1.5 }, svg);
+    if (t) el("circle", { cx: cx(c), cy: cy(r), r: 10, fill: G.turn === 0 ? "var(--p1)" : "var(--p2)", opacity: .55 }, svg);
+  }
+  // 上一手標記
+  const last = S.moves[S.moves.length - 1];
+  for (let a = 0; a < 64; a++) for (const o of [0, 1]) if ((o ? G.V : G.H)[a]) {
+    const R = wallRect(o, a), isLast = last === (o ? "v" : "h") + a;
+    el("rect", Object.assign({ rx: 3, fill: "var(--wall)", stroke: isLast ? "var(--jade)" : "none", "stroke-width": 3 }, R), svg);
+  }
+  if (ghost && canAct && tool === "wall") {
+    const ok = G.walls[G.turn] > 0 && E.wallLegal(G, ghost.o, ghost.a);
+    ghost.ok = ok;
+    el("rect", Object.assign({ rx: 3, fill: ok ? "var(--jade)" : "var(--accent)", opacity: .6 }, wallRect(ghost.o, ghost.a)), svg);
+  }
+  for (const p of [0, 1]) {
+    const x = G.pos[p], r = (x / 9) | 0, c = x % 9;
+    if (last && last[0] === "m" && G.turn === 1 - p) el("circle", { cx: cx(c), cy: cy(r), r: 23, fill: "none", stroke: "var(--jade)", "stroke-width": 3 }, svg);
+    el("circle", { cx: cx(c), cy: cy(r), r: 19, fill: `url(#g${p})`, stroke: "rgba(0,0,0,.35)", "stroke-width": 1.5 }, svg);
+  }
+  // 兩側「到終點還要幾步」
+  const d0 = dm[0][G.pos[0]], d1 = dm[1][G.pos[1]];
+  $("sub").textContent = S.over ? "按「新局」再來一盤" : `到終點：紅 ${d0} 步、藍 ${d1} 步｜第 ${S.moves.length + 1} 手`;
+}
+function trays() {
+  const top = flip() ? 0 : 1, bot = 1 - top;
+  const face = S.mode === "local" && S.face;
+  for (const [id, p] of [["trayTop", top], ["trayBot", bot]]) {
+    const t = $(id);
+    t.className = "tray" + (!S.over && G.turn === p ? " turn" : "");
+    let who = name(p);
+    if (S.mode === "ai") who += ((p === 0) === S.humanFirst) ? "（你）" : "（電腦）";
+    else if (S.mode === "online" && NETP && NETP.active()) who += NETP.mySeat() === p ? "（你）" : "（對手）";
+    t.innerHTML = `<span class="who" style="color:var(--p${p + 1})">${who}</span><span>牆 ${G.walls[p]}</span><span class="sticks">${Array.from({ length: 10 }, (_, i) => `<span class="stick${i >= G.walls[p] ? " used" : ""}"></span>`).join("")}</span>`;
+    t.style.transform = face && id === "trayTop" ? "rotate(180deg)" : "";
+  }
+}
+function render() { render0(); if (typeof onlineOverlay === "function" && NETP) onlineOverlay(); }
+function render0() {
+  draw(); trays();
+  const pr = (sel, attr, val) => document.querySelectorAll(sel + " button").forEach(b => b.setAttribute("aria-pressed", b.dataset[attr] === String(val)));
+  pr("#modeSeg", "mode", S.mode); pr("#sideSeg", "first", S.humanFirst ? 1 : 0); pr("#lvlSeg", "lv", S.level); pr("#faceSeg", "face", S.face);
+  $("aiOpts").hidden = S.mode !== "ai"; $("faceOpt").hidden = S.mode !== "local";
+  const canAct = !S.over && !thinking && humanTurn();
+  $("toolMove").setAttribute("aria-pressed", tool === "move"); $("toolWall").setAttribute("aria-pressed", tool === "wall");
+  $("toolMove").disabled = !canAct; $("toolWall").disabled = !canAct || G.walls[G.turn] <= 0;
+  $("wallBar").hidden = !(canAct && tool === "wall");
+  $("wallOk").disabled = !(ghost && ghost.ok); $("wallRot").disabled = !ghost;
+  $("wallText").textContent = !ghost ? "點棋盤上兩格之間的溝" : ghost.ok ? "再點一次或按「放下」" : "這裡不能放（重疊、交叉或封死路）";
+  let msg;
+  if (S.over) msg = S.over.r === 2 ? "和局" : S.over.resign ? `${name(1 - S.over.r)}認輸，${name(S.over.r)}贏` : `${name(S.over.r)}贏了`;
+  else if (thinking) msg = "電腦思考中…";
+  else msg = S.mode === "ai" ? (humanTurn() ? `輪到你（${name(G.turn)}）` : "電腦") : `輪到${name(G.turn)}`;
+  $("msg").textContent = msg;
+  $("score").innerHTML = `<span>紅贏 <b>${S.tally.r}</b></span><span>藍贏 <b>${S.tally.b}</b></span><span>和 <b>${S.tally.d}</b></span>`;
+  $("btnUndo").disabled = !S.moves.length;
+  $("btnGiveUp").disabled = !!S.over || !S.moves.length;
+}
+
+/* ───────── 操作 ───────── */
+function boardPt(evt) {
+  const pt = svg.createSVGPoint(); pt.x = evt.clientX; pt.y = evt.clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+/* 點的位置 → 最近的格子；放牆模式 → 最近的溝（直／橫）和錨點 */
+function cellAt(p) {
+  const c = Math.floor((p.x - PAD + GAP / 2) / PITCH), r = Math.floor((p.y - PAD + GAP / 2) / PITCH);
+  if (c < 0 || c > 8 || r < 0 || r > 8) return -1;
+  return (flip() ? 8 - r : r) * 9 + (flip() ? 8 - c : c);
+}
+function wallAt(p, prefer) {
+  const ux = (p.x - PAD + GAP / 2) / PITCH, uy = (p.y - PAD + GAP / 2) / PITCH;     // 溝在整數位置
+  const gx = Math.round(ux), gy = Math.round(uy), dx = Math.abs(ux - gx), dy = Math.abs(uy - gy);
+  let o = dy < dx ? 0 : 1;                    // 離橫溝比較近 → 橫牆
+  if (Math.abs(dx - dy) < .08 && prefer != null) o = prefer;
+  // 畫面座標的錨點：橫牆在溝 gy（介於第 gy-1、gy 列），左端格子＝離點最近的兩格
+  let vrow, vcol;
+  if (o === 0) { vrow = gy - 1; vcol = Math.round(ux - 1); }
+  else { vcol = gx - 1; vrow = Math.round(uy - 1); }
+  vrow = Math.max(0, Math.min(7, vrow)); vcol = Math.max(0, Math.min(7, vcol));
+  const r = flip() ? 7 - vrow : vrow, c = flip() ? 7 - vcol : vcol;
+  return { o, a: r * 8 + c };
+}
+svg.addEventListener("click", evt => {
+  if (S.over || thinking || !humanTurn()) return;
+  const p = boardPt(evt);
+  if (tool === "move") {
+    const x = cellAt(p);
+    if (x >= 0 && E.pawnMoves(G, G.turn).includes(x)) play("m" + x);
+    return;
+  }
+  const w = wallAt(p, ghost && ghost.o);
+  if (ghost && ghost.o === w.o && ghost.a === w.a && ghost.ok) { placeGhost(); return; }
+  ghost = w; render();
+});
+svg.addEventListener("pointermove", evt => {
+  if (tool !== "wall" || evt.pointerType !== "mouse" || S.over || thinking || !humanTurn()) return;
+  const w = wallAt(boardPt(evt), ghost && ghost.o);
+  if (!ghost || ghost.o !== w.o || ghost.a !== w.a) { ghost = w; render(); }
+});
+function placeGhost() { if (ghost && ghost.ok) play((ghost.o ? "v" : "h") + ghost.a); }
+$("toolMove").onclick = () => { tool = "move"; ghost = null; render(); };
+$("toolWall").onclick = () => { tool = "wall"; render(); };
+$("wallOk").onclick = placeGhost;
+$("wallRot").onclick = () => { if (!ghost) return; ghost = { o: 1 - ghost.o, a: ghost.a }; render(); };
+function ask(text, yes) { pending = yes; $("confirmText").textContent = text; $("confirm").hidden = false; }
+$("confirmYes").onclick = () => { $("confirm").hidden = true; const f = pending; pending = null; if (f) f(); };
+$("confirmNo").onclick = () => { $("confirm").hidden = true; pending = null; };
+function newGame() { token++; thinking = false; S.moves = []; S.over = null; ghost = null; tool = "move"; $("fx").innerHTML = ""; G = replay(); save(); render(); maybeAi(); }
+$("btnNew").onclick = () => (S.moves.length && !S.over ? ask("放棄這盤、重新開始？", newGame) : newGame());
+$("btnUndo").onclick = () => {
+  if (!S.moves.length) return;
+  token++; thinking = false; ghost = null; $("fx").innerHTML = "";
+  if (S.over) { if (S.over.resign) { S.over = null; G = replay(); save(); render(); return; } tallyAdd(S.over.r, -1); S.over = null; }
+  S.moves.pop(); G = replay();
+  if (S.mode === "ai") while (S.moves.length && !humanTurn()) { S.moves.pop(); G = replay(); }
+  save(); render(); maybeAi();
+};
+$("btnGiveUp").onclick = () => ask("認輸這盤？", () => {
+  token++; thinking = false;
+  const loser = S.mode === "ai" ? (S.humanFirst ? 0 : 1) : G.turn, w = 1 - loser;
+  S.over = { r: w, resign: true }; tallyAdd(w, 1);
+  stamp(`${name(w)}贏`, `${name(loser)}認輸`); save(); render();
+});
+const bind = (sel, f) => document.querySelectorAll(sel + " button").forEach(b => b.onclick = () => f(b.dataset));
+bind("#modeSeg", d => { if (d.mode === S.mode) return; if (S.mode === "online" && NETP && NETP.active()) NETP.leave(); S.mode = d.mode; token++; thinking = false; ghost = null; save(); render(); maybeAi(); });
+bind("#sideSeg", d => { const f = d.first === "1"; if (f === S.humanFirst) return; S.humanFirst = f; token++; thinking = false; ghost = null; save(); render(); maybeAi(); });
+bind("#lvlSeg", d => { S.level = +d.lv; save(); render(); });
+bind("#faceSeg", d => { S.face = +d.face; save(); render(); });
+
+/* ───────── 連線對戰（net.js） ───────── */
+const NETP_turnSeat = () => G.turn;
+function onlineUndoFor(seat) {
+  const keep = S.moves.slice(); let mv = S.moves.slice();
+  do { mv.pop(); S.moves = mv.slice(); G = replay(); } while (mv.length && NETP_turnSeat() !== seat);
+  S.moves = keep; G = replay();
+  return mv;
+}
+function onlineApply(st, remote) {
+  const was = !!S.over;
+  S.moves = (st.moves || []).slice(); S.over = null; ghost = null;
+  G = replay();
+  if (st.over) {
+    if (!was) finish(st.over.r);
+    if (!was && st.over.resign) {
+      const box = document.querySelector("#fx .stamp");
+      if (box) { let sm = box.querySelector(".small"); if (!sm) { sm = document.createElement("span"); sm.className = "small"; box.appendChild(sm); } sm.textContent = remote ? "對方認輸" : "你認輸"; }
+    }
+    S.over = st.over;
+  } else $("fx").innerHTML = "";
+  save(); render();
+}
+NETP = NetPlay.widget({
+  game: "quoridor", el: $("netBox"), sides: ["紅（先走）", "藍"],
+  adapter: {
+    getState: () => ({ moves: S.moves.slice(), over: S.over || null, cfg: null }),
+    setState: onlineApply,
+    turnSeat: () => NETP_turnSeat(),
+    undoFor: onlineUndoFor,
+    newCfg: () => null,
+    resignOver: seat => ({ r: 1 - seat, resign: true }),
+    onEnter(seat) { S.mode = "online"; token++; thinking = false; ghost = null; save(); render(); },
+    onLeave() { S.mode = "local"; S.moves = []; S.over = null; ghost = null; $("fx").innerHTML = ""; G = replay(); save(); render(); },
+  },
+  onWantOnline() { S.mode = "online"; render(); },
+  onRender() { onlineOverlay(); },
+});
+function onlineOverlay() {
+  const on = S.mode === "online";
+  $("netBox").hidden = !on;
+  if (!on) return;
+  $("aiOpts").hidden = true;
+  const act = NETP && NETP.active();
+  if (!S.over) $("msg").textContent = !act ? "連線對戰：開房間，或輸入對方的房號" : !NETP.connected() ? "等對手連線…" : NETP.myTurn() ? "輪到你" : "等對手下…";
+  $("btnUndo").disabled = !act || !S.moves.length || !!S.over;
+  $("btnGiveUp").disabled = !act || !!S.over || !S.moves.length;
+}
+{
+  const offNew = $("btnNew").onclick, offUndo = $("btnUndo").onclick, offGive = $("btnGiveUp").onclick;
+  $("btnNew").onclick = () => S.mode === "online" ? (NETP.active() && ask("跟對方要求重新開一盤？", () => NETP.request("new"))) : offNew();
+  $("btnUndo").onclick = () => S.mode === "online" ? (NETP.active() && S.moves.length && NETP.request("undo")) : offUndo();
+  $("btnGiveUp").onclick = () => S.mode === "online" ? (NETP.active() && ask("認輸這盤？", () => NETP.resign())) : offGive();
+}
+(function init() {
+  let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
+  S = Object.assign(defaults(), st || {});
+  try { G = replay(); } catch (e) { S.moves = []; S.over = null; G = replay(); }
+  render(); if (!S.over) maybeAi();
+})();
+</script>
