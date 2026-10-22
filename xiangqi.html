@@ -216,8 +216,11 @@
       <span class="label" style="margin-top:6px">電腦棋力</span>
       <div class="seg" id="lvlSeg">
         <button data-lv="0" aria-pressed="false">入門</button>
-        <button data-lv="1" aria-pressed="true">業餘</button>
-        <button data-lv="2" aria-pressed="false">進階</button>
+        <button data-lv="1" aria-pressed="false">初級</button>
+        <button data-lv="2" aria-pressed="true">業餘</button>
+        <button data-lv="3" aria-pressed="false">中級</button>
+        <button data-lv="4" aria-pressed="false">高級</button>
+        <button data-lv="5" aria-pressed="false">進階</button>
       </div>
     </div>
 
@@ -452,17 +455,19 @@ function ENGINE() {
     const all = legal(b, red), allowed = banned && banned.length ? all.filter(m => !banned.includes(m)) : all;   // 長將禁著不列入
     let root = order(b, allowed.length ? allowed : all), bestMove = root[0], bestScore = 0, done = 0;
     for (let d = 1; d <= maxDepth && !stop; d++) {
+      //  2026-10-22 修正：原本把隨機分數加進 alpha 再拿去剪枝，被剪掉的爛棋（例如送車）只回傳上限值，
+      //  加上隨機後可能被選中。改成：剪枝用「真實最佳分數 − noise」，比最佳差超過 noise 的棋，加完隨機也贏不過最佳。
       let alpha = -Infinity, cur = null, curScore = -Infinity;
       const scored = [];
       for (const m of root) {
         const cap = make(b, m);
-        let s = -negamax(d - 1, -Infinity, -alpha, !red, 1);
+        const raw = -negamax(d - 1, -Infinity, -(alpha - (noise || 0)), !red, 1);
         unmake(b, m, cap);
         if (stop) break;
-        if (noise) s += Math.random() * noise;
+        if (raw > alpha) alpha = raw;
+        const s = noise ? raw + Math.random() * noise : raw;
         scored.push([s, m]);
         if (s > curScore) { curScore = s; cur = m; }
-        if (s > alpha) alpha = s;
       }
       if (stop && d > 1) break;
       if (cur !== null) { bestMove = cur; bestScore = curScore; done = d; }
@@ -479,7 +484,16 @@ const E = ENGINE();
 const NAMES = { K: "帥", A: "仕", B: "相", N: "傌", R: "俥", C: "炮", P: "兵", k: "將", a: "士", b: "象", n: "馬", r: "車", c: "砲", p: "卒" };
 const CN = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
 const FW = ["", "１", "２", "３", "４", "５", "６", "７", "８", "９"];
-const LEVELS = [{ depth: 2, time: 800, noise: 70 }, { depth: 3, time: 2500, noise: 12 }, { depth: 6, time: 6000, noise: 0 }];
+//  2026-10-22（Gabi：「難度多樣一點，業餘和進階中間…進階基本打不贏」）：3 級 → 6 級。
+//  noise＝每個候選步加上 0~noise 分的隨機（兵＝100），越大越常走次佳步；depth＝往下算幾步。
+const LEVELS = [
+  { depth: 2, time: 800, noise: 70 },     // 入門
+  { depth: 2, time: 1200, noise: 25 },    // 初級
+  { depth: 3, time: 2500, noise: 12 },    // 業餘（原本的業餘）
+  { depth: 4, time: 3500, noise: 30 },    // 中級
+  { depth: 5, time: 5000, noise: 35 },    // 高級（常常算得跟進階一樣深，但比較會走次佳步）
+  { depth: 6, time: 6000, noise: 0 },     // 進階（原本的進階）
+];
 const CELL = 60, M = 40;
 const $ = id => document.getElementById(id);
 const svg = $("board");
@@ -495,7 +509,7 @@ let view = null;        // 復盤：正在看第幾步（null = 現在）
 let NET = { db: null, me: null, unsub: null, game: null, note: "" };   // 連線狀態（不存檔）
 
 function defaults() {
-  return { mode: "local", moves: [], flipped: false, humanRed: true, level: 1, seatRed: true, online: null, result: null, face: true, undoLimit: 3, undos: { r: 0, k: 0 } };
+  return { mode: "local", moves: [], flipped: false, humanRed: true, level: 2, lvV: 2, seatRed: true, online: null, result: null, face: true, undoLimit: 3, undos: { r: 0, k: 0 } };
 }
 /* 對坐：只在雙人同機時，畫面上方那一方的字轉 180 度 */
 const faceOn = () => S.mode === "local" && S.face !== false;
@@ -1336,6 +1350,7 @@ function start(data) {
   let st = data && data.S;
   if (!st) { try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { st = null; } }
   S = Object.assign(defaults(), st || {});
+  if (st && st.lvV !== 2) { S.level = [0, 2, 5][st.level] ?? 2; S.lvV = 2; }     // 舊存檔（3 級）換成 6 級的編號
   if (!data) { try { S.online = JSON.parse(sessionStorage.getItem(STORE + "-room") || "null") || S.online || null; } catch (e) { } }
   if (S.mode === "online" && !S.online) { S.moves = []; S.result = null; S.flipped = false; }     // 新分頁：回到大廳
   if (!Array.isArray(S.moves)) S.moves = [];
