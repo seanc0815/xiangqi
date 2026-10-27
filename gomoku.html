@@ -70,7 +70,7 @@
     <div class="group" id="aiOpts"><span class="label">我執</span>
       <div class="seg" id="sideSeg"><button data-black="1">黑（先下）</button><button data-black="0">白</button></div>
       <span class="label" style="margin-top:6px">電腦棋力</span>
-      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">中等</button><button data-lv="2">困難</button></div></div>
+      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">初級</button><button data-lv="2">業餘</button><button data-lv="3">中級</button><button data-lv="4">高級</button><button data-lv="5">進階</button></div></div>
     <div class="group"><span class="label">落子方式</span>
       <div class="seg" id="tapSeg"><button data-two="0">點一下</button><button data-two="1">點兩下確認</button></div></div>
     <div class="actions">
@@ -228,23 +228,24 @@ function GOMOKUENGINE() {
     return -1;
   }
   function choose(b0, p, level, renju) {
-    const b = b0.slice(), o = 3 - p, deadline = Date.now() + [300, 900, 2500][level];
+    const P = [{ t: 300, top: 4 }, { t: 500, top: 2 }, { t: 900, vcf: 4 }, { t: 1500, vcf: 8 }, { t: 2500, vcf: 12, look: 10, thr: 6 }, { t: 4000, vcf: 16, look: 14, thr: 8 }][level];   // 10-28：6 級
+    const b = b0.slice(), o = 3 - p, deadline = Date.now() + P.t;
     const legal = candidates(b).filter(i => !b[i] && !(renju && p === 1 && forbidden(b, i)));
     if (!legal.length) { for (let i = 0; i < N * N; i++) if (!b[i]) return { move: i }; return { move: -1 }; }
     for (const i of legal) { b[i] = p; const w = winsAt(b, i, p, renju); b[i] = 0; if (w) return { move: i, why: "win" }; }
     const blocks = legal.filter(i => { b[i] = o; const w = winsAt(b, i, o, renju); b[i] = 0; return w; });
     if (blocks.length) return { move: blocks[0], why: "block" };
-    if (level >= 1) { const v = vcf(b, p, level === 2 ? 12 : 4, renju, deadline); if (v >= 0) return { move: v, why: "vcf" }; }
+    if (P.vcf) { const v = vcf(b, p, P.vcf, renju, deadline); if (v >= 0) return { move: v, why: "vcf" }; }
     const scored = legal.map(i => [i, pointScore(b, i, p) * 1.15 + pointScore(b, i, o)]).sort((x, y) => y[1] - x[1]);
-    if (level === 0) { const top = scored.slice(0, 6); return { move: top[(Math.random() * Math.min(top.length, 4)) | 0][0] }; }
-    if (level === 2) {                               // 困難：前幾名再看對方最好的回應，也檢查對方的連續衝四
+    if (P.top) { const top = scored.slice(0, 6); return { move: top[(Math.random() * Math.min(top.length, P.top)) | 0][0] }; }
+    if (P.look) {                               // 困難：前幾名再看對方最好的回應，也檢查對方的連續衝四
       let best = scored[0][0], bv = -1e18;
-      for (const [i, v] of scored.slice(0, 10)) {
+      for (const [i, v] of scored.slice(0, P.look)) {
         b[i] = p;
         const opp = candidates(b).filter(j => !b[j]);
         let worst = 0;
         for (const j of opp) { const s = pointScore(b, j, o) * 1.1 + pointScore(b, j, p) * 0.5; if (s > worst) worst = s; }
-        const threat = Date.now() < deadline ? vcf(b, o, 6, renju, deadline) : -1;
+        const threat = Date.now() < deadline ? vcf(b, o, P.thr, renju, deadline) : -1;
         b[i] = 0;
         const val = v - worst * 0.7 - (threat >= 0 ? 5e5 : 0);
         if (val > bv) { bv = val; best = i; }
@@ -262,7 +263,7 @@ const svg = $("board"), NS = "http://www.w3.org/2000/svg", STORE = "gomoku-v1";
 const LETTERS = "ABCDEFGHJKLMNOP";
 let S = null, G = null, thinking = false, token = 0, pending = null, ghost = -1;
 const name = p => (p === 1 ? "黑" : "白");
-function defaults() { return { mode: "ai", rule: "free", humanBlack: true, level: 1, two: false, moves: [], over: null, tally: { b: 0, w: 0, d: 0 } }; }
+function defaults() { return { mode: "ai", rule: "free", humanBlack: true, level: 2, lvV: 2, two: false, moves: [], over: null, tally: { b: 0, w: 0, d: 0 } }; }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { } }
 const renju = () => S.rule === "renju";
 function replay() {
@@ -454,6 +455,7 @@ function onlineOverlay() {
 (function init() {
   let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
   S = Object.assign(defaults(), st || {});
+  if (st && st.lvV !== 2) { S.level = [0, 2, 5][S.level] ?? 2; S.lvV = 2; }     // 舊存檔（3 級）換成 6 級的編號
   try { G = replay(); } catch (e) { S.moves = []; S.over = null; G = replay(); }
   render(); if (!S.over) maybeAi();
 })();

@@ -88,7 +88,7 @@
     <div class="group" id="aiOpts"><span class="label">我是</span>
       <div class="seg" id="sideSeg"><button data-first="1">紅（先走）</button><button data-first="0">藍</button></div>
       <span class="label" style="margin-top:6px">電腦棋力</span>
-      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">中等</button><button data-lv="2">困難</button></div></div>
+      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">初級</button><button data-lv="2">業餘</button><button data-lv="3">中級</button><button data-lv="4">高級</button><button data-lv="5">進階</button></div></div>
     <div class="group" id="faceOpt"><span class="label">雙人同機</span>
       <div class="seg" id="faceSeg"><button data-face="0">一般</button><button data-face="1">面對面（上方按鈕倒過來）</button></div></div>
     <div class="actions">
@@ -274,7 +274,7 @@ const svg = $("board"), NS = "http://www.w3.org/2000/svg", STORE = "quoridor-v1"
 let S = null, G = null, thinking = false, token = 0, pending = null, ghost = null;
 const name = p => (p === 0 ? "紅" : "藍");
 const MAXPLY = 300;               // 太久沒分出勝負（互相繞圈）算和局
-function defaults() { return { mode: "ai", humanFirst: true, level: 1, face: 0, moves: [], over: null, tally: { r: 0, b: 0, d: 0 } }; }
+function defaults() { return { mode: "ai", humanFirst: true, level: 2, lvV: 2, face: 0, moves: [], over: null, tally: { r: 0, b: 0, d: 0 } }; }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { } }
 function replay() {
   const s = E.fresh();
@@ -310,7 +310,7 @@ let worker = null;
 try { worker = new Worker(URL.createObjectURL(new Blob([`const E=(${QENGINE.toString()})();onmessage=e=>{const d=e.data;postMessage({id:d.id,r:E.search(d.moves,d.depth,d.time)});};`], { type: "text/javascript" }))); } catch (e) { worker = null; }
 let reqId = 0; const waiting = new Map();
 if (worker) worker.onmessage = e => { const cb = waiting.get(e.data.id); waiting.delete(e.data.id); if (cb) cb(e.data.r); };
-const LV = [{ depth: 1, time: 300, noise: 0.35 }, { depth: 3, time: 1000, noise: 0.08 }, { depth: 5, time: 3000, noise: 0 }];   // 10-19 自對戰：困難 5:1 中等、中等 6:0 入門
+const LV = [{ depth: 1, time: 300, noise: 0.35 }, { depth: 2, time: 600, noise: 0.2 }, { depth: 3, time: 1000, noise: 0.08 }, { depth: 4, time: 1800, noise: 0.03 }, { depth: 5, time: 3000, noise: 0 }, { depth: 6, time: 4500, noise: 0 }];   // 10-28：6 級；   // 10-19 自對戰：困難 5:1 中等、中等 6:0 入門
 function maybeAi() {
   if (!aiTurn()) return;
   thinking = true; render();
@@ -550,6 +550,7 @@ function onlineOverlay() {
 (function init() {
   let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
   S = Object.assign(defaults(), st || {});
+  if (st && st.lvV !== 2) { S.level = [0, 2, 5][S.level] ?? 2; S.lvV = 2; }     // 舊存檔（3 級）換成 6 級的編號
   try { G = replay(); } catch (e) { S.moves = []; S.over = null; G = replay(); }
   render(); if (!S.over) maybeAi();
 })();

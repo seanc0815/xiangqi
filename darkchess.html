@@ -72,7 +72,7 @@
     <div class="group" id="aiOpts"><span class="label">誰先翻</span>
       <div class="seg" id="sideSeg"><button data-first="1">我先</button><button data-first="0">電腦先</button></div>
       <span class="label" style="margin-top:6px">電腦棋力</span>
-      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">中等</button><button data-lv="2">困難</button></div></div>
+      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">初級</button><button data-lv="2">業餘</button><button data-lv="3">中級</button><button data-lv="4">高級</button><button data-lv="5">進階</button></div></div>
     <div class="actions">
       <button class="btn primary" id="btnNew">新局</button><button class="btn" id="btnUndo">悔棋</button><button class="btn" id="btnGiveUp">認輸</button>
     </div>
@@ -161,7 +161,7 @@ function DARKENGINE() {
     const opp = color === "R" ? "K" : "R";
     const acts = actions(st, color);
     if (!acts.length) return null;
-    const depth = [1, 2, 3][level];
+    const depth = [1, 2, 2, 3, 4, 5][level];   // 10-28：6 級
     const mm = (s, side, d, alpha, beta) => {
       const me = side === color;
       const as = actions(s, side).filter(a => a.k === "m");
@@ -205,7 +205,7 @@ const svg = $("board"), NS = "http://www.w3.org/2000/svg", STORE = "darkchess-v1
 const NAMES = { R: { 7: "帥", 6: "仕", 5: "相", 4: "俥", 3: "傌", 2: "炮", 1: "兵" }, K: { 7: "將", 6: "士", 5: "象", 4: "車", 3: "馬", 2: "包", 1: "卒" } };
 const pname = p => NAMES[p[0]][p[1]];
 let S = null, G = null, thinking = false, token = 0, pending = null, sel = -1;
-function defaults() { return { mode: "ai", humanFirst: true, level: 1, deal: null, moves: [], over: null }; }
+function defaults() { return { mode: "ai", humanFirst: true, level: 2, lvV: 2, deal: null, moves: [], over: null }; }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { } }
 /* moves: "f12" 翻、"m3-11" 走／吃 */
 function replay() {
@@ -272,7 +272,8 @@ function maybeAi() {
     thinking = false;
     if (!r) { render(); return; }
     let a = r.action;
-    if (S.level === 0 && Math.random() < 0.4 && r.scored.length > 1) a = r.scored[(Math.random() * Math.min(4, r.scored.length)) | 0][0];
+    const rndP = [0.4, 0.2, 0, 0, 0, 0][S.level];
+    if (Math.random() < rndP && r.scored.length > 1) a = r.scored[(Math.random() * Math.min(S.level ? 3 : 4, r.scored.length)) | 0][0];
     act(a.k === "f" ? "f" + a.i : `m${a.f}-${a.t}`);
   }, 550);
 }
@@ -428,6 +429,7 @@ function onlineOverlay() {
 (function init() {
   let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
   S = Object.assign(defaults(), st || {});
+  if (st && st.lvV !== 2) { S.level = [0, 2, 5][S.level] ?? 2; S.lvV = 2; }     // 舊存檔（3 級）換成 6 級的編號
   if (!Array.isArray(S.deal) || S.deal.length !== 32) { S.deal = E.newDeal(Math.random); S.moves = []; S.over = null; }
   try { G = replay(); } catch (e) { S.moves = []; S.over = null; G = replay(); }
   render(); if (!S.over) maybeAi();

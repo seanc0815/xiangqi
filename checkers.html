@@ -68,7 +68,7 @@
     <div class="group" id="aiOpts"><span class="label">我是</span>
       <div class="seg" id="sideSeg"><button data-first="1">紅（先走）</button><button data-first="0">藍</button></div>
       <span class="label" style="margin-top:6px">電腦棋力</span>
-      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">中等</button><button data-lv="2">困難</button></div></div>
+      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">初級</button><button data-lv="2">業餘</button><button data-lv="3">中級</button><button data-lv="4">高級</button><button data-lv="5">進階</button></div></div>
     <div class="actions">
       <button class="btn primary" id="btnNew">新局</button><button class="btn" id="btnUndo">悔棋</button><button class="btn" id="btnGiveUp">認輸</button>
     </div>
@@ -150,15 +150,17 @@ function CCENGINE() {
       if (GOAL[p].includes(m.f) && !GOAL[p].includes(m.t)) v += 6;
       return [m, v, nb];
     }).sort((x, y) => x[1] - y[1]);
-    if (level === 2) {                      // 困難：跳棋主要比速度 → 前幾名再看「自己下一步」能接著走多遠（鋪連跳的路）
-      scored = scored.slice(0, 16).map(([m, v, nb]) => {
+    const look = [0, 0, 0, 16, 24, 24][level], deep = level >= 5 ? 2 : 1;   // 10-28：6 級
+    if (look) {                      // 中級以上：跳棋主要比速度 → 前幾名再看「自己下一步」能接著走多遠（鋪連跳的路）
+      const ahead = (bb, d) => { let best = val(bb); for (const m2 of moves(bb, p)) { const n2 = appl(bb, m2); const v2 = d > 1 ? Math.min(val(n2), ahead(n2, d - 1)) : val(n2); if (v2 < best) best = v2; } return best; };
+      scored = scored.slice(0, look).map(([m, v, nb]) => {
         if (won(nb, p)) return [m, -1e9, nb];
-        let next = v;
-        for (const m2 of moves(nb, p)) { const n2 = appl(nb, m2); const v2 = val(n2); if (v2 < next) next = v2; }
+        const next = ahead(nb, deep);
         return [m, 0.45 * v + 0.55 * next, nb];
       }).sort((x, y) => x[1] - y[1]);
     }
-    if (level === 0 && rnd() < 0.45) return scored[Math.min(scored.length - 1, (rnd() * 4) | 0)][0];
+    const rndP = [0.45, 0.2, 0, 0, 0, 0][level];
+    if (rnd() < rndP) return scored[Math.min(scored.length - 1, (rnd() * (level ? 3 : 4)) | 0)][0];
     const top = scored.filter(x => x[1] <= scored[0][1] + 1e-9);
     return top[(rnd() * top.length) | 0][0];
   }
@@ -170,7 +172,7 @@ const $ = id => document.getElementById(id);
 const svg = $("board"), NS = "http://www.w3.org/2000/svg", STORE = "checkers-v1";
 let S = null, G = null, thinking = false, token = 0, pending = null, sel = -1;
 const name = p => (p === 1 ? "紅" : "藍");
-function defaults() { return { mode: "ai", humanFirst: true, level: 1, moves: [], over: null, tally: { r: 0, b: 0, d: 0 } }; }
+function defaults() { return { mode: "ai", humanFirst: true, level: 2, lvV: 2, moves: [], over: null, tally: { r: 0, b: 0, d: 0 } }; }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { } }
 function replay() {
   const b = E.start(); let turn = 1, result = 0, path = null;
@@ -355,6 +357,7 @@ function onlineOverlay() {
 (function init() {
   let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
   S = Object.assign(defaults(), st || {});
+  if (st && st.lvV !== 2) { S.level = [0, 2, 5][S.level] ?? 2; S.lvV = 2; }     // 舊存檔（3 級）換成 6 級的編號
   try { G = replay(); } catch (e) { S.moves = []; S.over = null; G = replay(); }
   render(); if (!S.over) maybeAi();
 })();

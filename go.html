@@ -146,9 +146,7 @@
       </div>
       <span class="label" style="margin-top:6px">電腦棋力</span>
       <div class="seg" id="lvlSeg">
-        <button data-lv="0" aria-pressed="false">入門</button>
-        <button data-lv="1" aria-pressed="true">中等</button>
-        <button data-lv="2" aria-pressed="false">困難</button>
+        <button data-lv="0" aria-pressed="false">入門</button><button data-lv="1" aria-pressed="false">初級</button><button data-lv="2" aria-pressed="true">業餘</button><button data-lv="3" aria-pressed="false">中級</button><button data-lv="4" aria-pressed="false">高級</button><button data-lv="5" aria-pressed="false">進階</button>
       </div>
     </div>
 
@@ -440,13 +438,13 @@ function handicapPoints(n, h) {
 }
 const maxHandicap = n => (n === 9 ? 5 : 9);
 const LETTERS = "ABCDEFGHJKLMNOPQRST";
-const LEVELS = [{ time: 400, loose: true }, { time: 1600 }, { time: 4500 }];
+const LEVELS = [{ time: 400, loose: 0.25 }, { time: 800, loose: 0.6 }, { time: 1600 }, { time: 2800 }, { time: 4500 }, { time: 6000 }];   // 10-28：6 級；loose＝前幾名裡隨機挑（模擬數至少第一名的幾成）
 const BIG_TIME = { 9: 1, 13: 1.4, 19: 1.8 };      // 大棋盤多給一點時間
 
 let S = null, G = null;
 let thinking = false, token = 0, ghost = -1, hint = null, overlay = null, pendingConfirm = null, scoring = null;
 
-function defaults() { return { n: 9, mode: "local", humanBlack: true, level: 1, handicap: 0, two: { 9: false, 13: false, 19: true }, moves: [], over: null }; }
+function defaults() { return { n: 9, mode: "local", humanBlack: true, level: 2, lvV: 2, handicap: 0, two: { 9: false, 13: false, 19: true }, moves: [], over: null }; }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { } }
 function label(n, i) { return i < 0 ? "虛手" : LETTERS[i % n] + (n - ((i / n) | 0)); }
 const colName = col => col === 1 ? "黑" : "白";
@@ -540,7 +538,7 @@ function maybeAi() {
       if (r.move < 0 || (lastPass && mine(estScore(r.own)) > 0)) { commit(-1); return; }   // 沒得下，或你虛手而電腦領先 → 虛手
       let m = r.move;
       if (L.loose && r.top.length > 1) {                                                // 入門：前幾名裡隨機挑
-        const ok = r.top.filter(t => t.move >= 0 && t.N >= r.top[0].N * 0.25);
+        const ok = r.top.filter(t => t.move >= 0 && t.N >= r.top[0].N * L.loose);
         m = ok[(Math.random() * ok.length) | 0].move;
       }
       commit(m);
@@ -927,6 +925,7 @@ function onlineOverlay() {
   let st = null;
   try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { st = null; }
   S = Object.assign(defaults(), st || {});
+  if (st && st.lvV !== 2) { S.level = [0, 2, 5][S.level] ?? 2; S.lvV = 2; }     // 舊存檔（3 級）換成 6 級的編號
   if (![9, 13, 19].includes(S.n)) S.n = 9;
   if (!(S.handicap >= 2 && S.handicap <= maxHandicap(S.n))) S.handicap = 0;
   S.two = Object.assign({ 9: false, 13: false, 19: true }, S.two || {});

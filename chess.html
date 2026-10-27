@@ -75,7 +75,7 @@
     <div class="group" id="aiOpts"><span class="label">我執</span>
       <div class="seg" id="sideSeg"><button data-white="1">白（先走）</button><button data-white="0">黑</button></div>
       <span class="label" style="margin-top:6px">電腦棋力</span>
-      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">中等</button><button data-lv="2">困難</button></div></div>
+      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">初級</button><button data-lv="2">業餘</button><button data-lv="3">中級</button><button data-lv="4">高級</button><button data-lv="5">進階</button></div></div>
     <div class="actions">
       <button class="btn primary" id="btnNew">新局</button><button class="btn" id="btnUndo">悔棋</button><button class="btn" id="btnFlip">翻轉</button>
       <button class="btn" id="btnHint">提示</button><button class="btn" id="btnDraw">求和</button><button class="btn" id="btnGiveUp">認輸</button>
@@ -313,7 +313,7 @@ const $ = id => document.getElementById(id);
 const svg = $("board"), NS = "http://www.w3.org/2000/svg", STORE = "chess-v1";
 const GLYPH = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
 let S = null, G = null, thinking = false, token = 0, pending = null, sel = -1, targets = [], hint = null, promoPick = null;
-function defaults() { return { mode: "ai", humanWhite: true, level: 1, flipped: false, moves: [], over: null }; }
+function defaults() { return { mode: "ai", humanWhite: true, level: 2, lvV: 2, flipped: false, moves: [], over: null }; }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { } }
 const mstr = m => `${m.f}-${m.t}${m.p || ""}`;
 const sameMove = (a, b) => a.f === b.f && a.t === b.t && (a.p || "") === (b.p || "");
@@ -363,7 +363,7 @@ let worker = null;
 try { worker = new Worker(URL.createObjectURL(new Blob([`const E=(${CHESSENGINE.toString()})();onmessage=e=>{const d=e.data;postMessage({id:d.id,r:E.search(d.s,d.depth,d.time,d.hist)});};`], { type: "text/javascript" }))); } catch (e) { worker = null; }
 let reqId = 0; const waiting = new Map();
 if (worker) worker.onmessage = e => { const cb = waiting.get(e.data.id); waiting.delete(e.data.id); if (cb) cb(e.data.r); };
-const LV = [{ depth: 1, time: 300, noise: 0.35 }, { depth: 3, time: 1200, noise: 0.05 }, { depth: 30, time: 3500, noise: 0 }];
+const LV = [{ depth: 1, time: 300, noise: 0.35 }, { depth: 2, time: 600, noise: 0.2 }, { depth: 3, time: 1200, noise: 0.05 }, { depth: 5, time: 2000, noise: 0.02 }, { depth: 8, time: 3000, noise: 0 }, { depth: 30, time: 4500, noise: 0 }];   // 10-28：6 級
 function think(L, cb) {
   const id = ++reqId, hist = G.keys.slice(0, -1);
   if (worker) { waiting.set(id, cb); worker.postMessage({ id, s: G.s, depth: L.depth, time: L.time, hist }); }
@@ -578,6 +578,7 @@ function onlineOverlay() {
 (function init() {
   let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
   S = Object.assign(defaults(), st || {});
+  if (st && st.lvV !== 2) { S.level = [0, 2, 5][S.level] ?? 2; S.lvV = 2; }     // 舊存檔（3 級）換成 6 級的編號
   try { G = replay(); } catch (e) { S.moves = []; S.over = null; G = replay(); }
   render(); if (!S.over) maybeAi();
 })();

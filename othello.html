@@ -68,7 +68,7 @@
     <div class="group" id="aiOpts"><span class="label">我執</span>
       <div class="seg" id="sideSeg"><button data-black="1">黑（先下）</button><button data-black="0">白</button></div>
       <span class="label" style="margin-top:6px">電腦棋力</span>
-      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">中等</button><button data-lv="2">困難</button></div></div>
+      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">初級</button><button data-lv="2">業餘</button><button data-lv="3">中級</button><button data-lv="4">高級</button><button data-lv="5">進階</button></div></div>
     <div class="group"><span class="label">提示可以下的位置</span>
       <div class="seg" id="hintSeg"><button data-h="1">顯示</button><button data-h="0">不顯示</button></div></div>
     <div class="actions">
@@ -155,7 +155,7 @@ const $ = id => document.getElementById(id);
 const svg = $("board"), NS = "http://www.w3.org/2000/svg", STORE = "othello-v1";
 let S = null, G = null, thinking = false, token = 0, pending = null;
 const name = p => (p === 1 ? "黑" : "白");
-function defaults() { return { mode: "ai", humanBlack: true, level: 1, hints: true, moves: [], over: null, tally: { b: 0, w: 0, d: 0 } }; }
+function defaults() { return { mode: "ai", humanBlack: true, level: 2, lvV: 2, hints: true, moves: [], over: null, tally: { b: 0, w: 0, d: 0 } }; }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { } }
 function start() { const b = Array(64).fill(0); b[27] = b[36] = 2; b[28] = b[35] = 1; return b; }
 /* moves 裡 -1 = 沒地方下、跳過（自動記錄，悔棋時一起退） */
@@ -201,7 +201,7 @@ let worker = null;
 try { worker = new Worker(URL.createObjectURL(new Blob([`const E=(${OTHELLOENGINE.toString()})();onmessage=e=>{const d=e.data;postMessage({id:d.id,r:E.search(d.b,d.p,d.depth,d.time)});};`], { type: "text/javascript" }))); } catch (e) { worker = null; }
 let reqId = 0; const waiting = new Map();
 if (worker) worker.onmessage = e => { const cb = waiting.get(e.data.id); waiting.delete(e.data.id); if (cb) cb(e.data.r); };
-const LV = [{ depth: 1, time: 200, noise: 0.5 }, { depth: 4, time: 900, noise: 0.1 }, { depth: 64, time: 2800, noise: 0 }];
+const LV = [{ depth: 1, time: 200, noise: 0.5 }, { depth: 2, time: 500, noise: 0.3 }, { depth: 4, time: 900, noise: 0.1 }, { depth: 6, time: 1500, noise: 0.03 }, { depth: 9, time: 2200, noise: 0 }, { depth: 64, time: 3200, noise: 0 }];   // 10-28：6 級
 function maybeAi() {
   if (!aiTurn()) return;
   thinking = true; render();
@@ -354,6 +354,7 @@ function onlineOverlay() {
 (function init() {
   let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
   S = Object.assign(defaults(), st || {});
+  if (st && st.lvV !== 2) { S.level = [0, 2, 5][S.level] ?? 2; S.lvV = 2; }     // 舊存檔（3 級）換成 6 級的編號
   try { G = replay(); } catch (e) { S.moves = []; S.over = null; G = replay(); }
   render(); if (!S.over) maybeAi();
 })();

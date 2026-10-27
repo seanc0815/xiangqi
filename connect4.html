@@ -69,7 +69,7 @@
     <div class="group" id="aiOpts"><span class="label">我是</span>
       <div class="seg" id="sideSeg"><button data-first="1">紅（先下）</button><button data-first="0">黃</button></div>
       <span class="label" style="margin-top:6px">電腦棋力</span>
-      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">中等</button><button data-lv="2">困難</button></div></div>
+      <div class="seg" id="lvlSeg"><button data-lv="0">入門</button><button data-lv="1">初級</button><button data-lv="2">業餘</button><button data-lv="3">中級</button><button data-lv="4">高級</button><button data-lv="5">進階</button></div></div>
     <div class="actions">
       <button class="btn primary" id="btnNew">新局</button><button class="btn" id="btnUndo">悔棋</button><button class="btn" id="btnGiveUp">認輸</button>
     </div>
@@ -165,7 +165,7 @@ const $ = id => document.getElementById(id);
 const svg = $("board"), NS = "http://www.w3.org/2000/svg", STORE = "connect4-v1";
 let S = null, G = null, thinking = false, token = 0, pending = null;
 const name = p => (p === 1 ? "紅" : "黃");
-function defaults() { return { mode: "ai", humanFirst: true, level: 1, moves: [], over: null, tally: { r: 0, y: 0, d: 0 } }; }
+function defaults() { return { mode: "ai", humanFirst: true, level: 2, lvV: 2, moves: [], over: null, tally: { r: 0, y: 0, d: 0 } }; }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { } }
 
 /* 盤面陣列 grid[c][r]（r=0 最下面），以及勝負與連線位置 */
@@ -217,7 +217,7 @@ let worker = null;
 try { worker = new Worker(URL.createObjectURL(new Blob([`const E=(${C4ENGINE.toString()})();onmessage=e=>{const d=e.data;postMessage({id:d.id,r:E.search(d.moves,d.depth,d.time)});};`], { type: "text/javascript" }))); } catch (e) { worker = null; }
 let reqId = 0; const waiting = new Map();
 if (worker) worker.onmessage = e => { const cb = waiting.get(e.data.id); waiting.delete(e.data.id); if (cb) cb(e.data.r); };
-const LV = [{ depth: 2, time: 300, noise: 0.45 }, { depth: 6, time: 900, noise: 0.08 }, { depth: 42, time: 3000, noise: 0 }];
+const LV = [{ depth: 2, time: 300, noise: 0.45 }, { depth: 4, time: 600, noise: 0.25 }, { depth: 6, time: 900, noise: 0.08 }, { depth: 9, time: 1500, noise: 0.03 }, { depth: 14, time: 2200, noise: 0 }, { depth: 42, time: 3500, noise: 0 }];   // 10-28：6 級
 function maybeAi() {
   if (!aiTurn()) return;
   thinking = true; render();
@@ -366,6 +366,7 @@ function onlineOverlay() {
 (function init() {
   let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
   S = Object.assign(defaults(), st || {});
+  if (st && st.lvV !== 2) { S.level = [0, 2, 5][S.level] ?? 2; S.lvV = 2; }     // 舊存檔（3 級）換成 6 級的編號
   try { G = replay(); } catch (e) { S.moves = []; S.over = null; G = replay(); }
   render(); if (!S.over) maybeAi();
 })();
