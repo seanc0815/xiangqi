@@ -160,6 +160,7 @@
     <p>中國象棋：兩個人同一個畫面輪流下、各用各的手機連線，或跟電腦下。</p>
     <nav class="switch" id="switch" aria-label="回到棋類首頁"><a href="./">← 全部棋類</a></nav>
     <button class="iconbtn" id="btnSound" title="音效開關" aria-pressed="true">🔊</button>
+    <button class="iconbtn" id="btnVoice" title="語音開關（報棋步、將軍、勝負）" aria-pressed="true">🗣️</button>
   </header>
 
   <div class="boardcol">
@@ -301,8 +302,8 @@
       </div>
     </div>
 
-    <div class="group">
-      <span class="label">棋譜</span>
+    <div class="group" id="movesGroup" hidden>
+      <span class="label">棋譜（點一步就跳到那個局面）</span>
       <div class="moves" id="moves"><div class="empty">還沒有棋步。紅方先走，例如「炮二平五」（當頭炮）。</div></div>
     </div>
     <details class="rules"><summary>玩法說明</summary>
@@ -316,6 +317,7 @@
         <li><b>長將、長捉</b>：同一個局面要第三次出現時，一直將軍（長將）或一直追著要吃同一顆子（長捉）的一方必須變招，不能再走那一步；雙方都只是閒著走就判和（不變作和）。</li>
         <li><b>和棋</b>：連續 60 回合沒有吃子；雙方都沒有能過河進攻的子；也可以提出求和、或認輸。</li>
         <li><b>電腦棋風</b>：搶攻型把子力往你的九宮壓；棄子型願意用子換攻勢；穩健型先顧好自己的帥。三種都會設局（故意送子，你吃了反而虧）和起疑（你送子時多算幾步再決定吃不吃）。「純算」就是沒有棋風、只算分數的原本電腦。</li>
+        <li><b>音效、語音</b>：右上角 🔊 是棋子的聲音，🗣️ 是語音（念每一步棋、將軍、絕殺、勝負），各自可以關。語音用的是手機或電腦內建的中文聲音，沒有的話就不會念。</li>
         <li><b>復盤、沙盤推演</b>：下完一盤才有。復盤可以用 ◀ ▶ 或點棋譜看每一步；沙盤推演從復盤的任何一個局面開始，兩邊的棋子都由你動，看看換一種走法會怎樣，不會記進棋譜。</li>
       </ul>
     </details>
@@ -654,7 +656,7 @@ let setupOpen = null;   // 設定區展開？null = 自動（還沒開始就展�
 let NET = { db: null, me: null, unsub: null, game: null, note: "" };   // 連線狀態（不存檔）
 
 function defaults() {
-  return { mode: "local", moves: [], flipped: false, humanRed: true, level: 2, lvV: 2, style: "random", styleNow: null, seatRed: true, online: null, result: null, face: true, undoLimit: 3, undos: { r: 0, k: 0 }, sound: true };
+  return { mode: "local", moves: [], flipped: false, humanRed: true, level: 2, lvV: 2, style: "random", styleNow: null, seatRed: true, online: null, result: null, face: true, undoLimit: 3, undos: { r: 0, k: 0 }, sound: true, voice: true };
 }
 /* 對坐：只在雙人同機時，畫面上方那一方的字轉 180 度 */
 const faceOn = () => S.mode === "local" && S.face !== false;
@@ -892,7 +894,7 @@ function endInfo(over) {                                           // 結束卡�
     if (nameMemo.key !== key) { let v = null; try { v = mateName(GF.b, GF.red, GF.hist[GF.hist.length - 1]); } catch (e) { } nameMemo = { key, val: v }; }
     name = nameMemo.val;
   }
-  const parts = [name ? `${name}絕殺` : over.why, `共 ${S.moves.length} 步`];
+  const parts = [name ? (name.endsWith("殺") ? name : `${name}絕殺`) : over.why];
   if (S.mode === "ai") parts.push(`電腦${LEVEL_NAMES[S.level] || ""}・${S.style !== "plain" && S.styleNow ? STYLE_NAMES[S.styleNow] : "純算"}`);
   return parts.join("　");
 }
@@ -913,7 +915,7 @@ function renderPanel() {
     sub = view === 0 ? "開局。按 ▶ 往後看" : `${GF.hist[view - 1].red ? "紅" : "黑"}：${GF.hist[view - 1].note}。點棋譜或 ◀ ▶ 看每一步，想試別的走法按「沙盤推演」`;
   } else if (over && over.draw) { msg = "和棋"; sub = over.why; }
   else if (over) { msg = winnerText(over); sub = over.why; }
-  else if (thinking) { msg = "電腦思考中…"; sub = "可以先看一下棋譜"; }
+  else if (thinking) { msg = "電腦思考中…"; sub = "等它一下"; }
   else if (S.mode === "online") {
     if (!S.online) { msg = "連線對戰"; sub = "開新房間，或輸入對手給你的房號"; }
     else if (!NET.game || !NET.game.red || !NET.game.black) { msg = "等對手加入"; sub = `把房號 ${S.online.code} 傳給對手`; }
@@ -935,6 +937,7 @@ function renderPanel() {
   const all = h.slice(0, base).concat(sandbox ? G.hist.slice(base) : []);
   const cur = sandbox ? all.length : view == null ? h.length : view;
   const box = $("moves");
+  $("movesGroup").hidden = !(view != null || sandbox);           // 棋譜只在復盤、沙盤時出現（Gabi 10-29）
   box.classList.toggle("canpick", canReview());
   if (!all.length) box.innerHTML = `<div class="empty">還沒有棋步。紅方先走，例如「炮二平五」（當頭炮）。</div>`;
   else {
@@ -994,6 +997,7 @@ function renderPanel() {
   $("btnGiveUp").disabled = busy;
   $("btnDraw").disabled = busy;
   $("btnSound").setAttribute("aria-pressed", S.sound !== false); $("btnSound").textContent = S.sound !== false ? "🔊" : "🔇";
+  $("btnVoice").setAttribute("aria-pressed", S.voice !== false); $("btnVoice").hidden = !("speechSynthesis" in window);
   renderOnline();
 }
 function lastText(check) {
@@ -1122,6 +1126,9 @@ function stamp(kind, sub, bigText) {
   if (kind === "check" || kind === "warn") setTimeout(() => d.remove(), 1700);
   else { svg.classList.remove("shake"); void svg.getBoundingClientRect(); svg.classList.add("shake"); }
   sfx(stampSound(kind));
+  const head = kind === "mate" ? (bigText ? (bigText.endsWith("殺") ? bigText : bigText + "絕殺") : "絕殺") : kind === "warn" ? (bigText || "長將") + "，請變招" : { check: "將軍", stale: "困斃", draw: "和棋", perp: "判負", resign: "認輸" }[kind] || "";
+  const tail = kind === "check" || kind === "warn" ? "" : (sub || "").replace(/^絕殺・/, "").replace(/・/g, "，");
+  say(tail && tail !== head ? head + "，" + tail : head);
 }
 function stampSound(kind) {
   if (kind === "check" || kind === "warn" || kind === "draw") return kind;
@@ -1216,7 +1223,7 @@ function play(m) {
     const before = G.b.slice(), note = notation(G.b, m), red = G.red, cap = E.make(G.b, m);
     G.hist.push({ m, cap, note, red, sev: severity(before, G.b, red) }); G.red = !G.red; G.keys.push(posKey(G.b, G.red));
     sel = -1; targets = []; hint = null;
-    sfx(capNow ? "cap" : "move"); render(m % 100); announce();
+    sfx(capNow ? "cap" : "move"); sayMove(note); render(m % 100); announce();
     return;
   }
   S.moves.push(m);
@@ -1225,7 +1232,7 @@ function play(m) {
   G.hist.push({ m, cap, note, red, sev: severity(before, G.b, red) }); G.red = !G.red;
   G.keys.push(posKey(G.b, G.red));
   sel = -1; targets = []; hint = null;
-  sfx(capNow ? "cap" : "move");
+  sfx(capNow ? "cap" : "move"); sayMove(note);
   render(m % 100); save(); announce();
   if (S.mode === "online") pushOnline({ moves: S.moves.slice() });
   else maybeAi();
@@ -1381,7 +1388,7 @@ function watch(code) {
       const extendsOne = moves.length === S.moves.length + 1 && S.moves.every((m, i) => m === moves[i]);
       S.moves = moves; save();
       rebuild(extendsOne ? moves[moves.length - 1] % 100 : undefined);
-      if (extendsOne) { sfx(GF.hist[GF.hist.length - 1].cap !== "." ? "cap" : "move"); announce(); }   // 對手剛走的那一步
+      if (extendsOne) { const last = GF.hist[GF.hist.length - 1]; sfx(last.cap !== "." ? "cap" : "move"); sayMove(last.note); announce(); }   // 對手剛走的那一步
     } else if (prevResult !== JSON.stringify(S.result)) {
       renderPanel();
       if (S.result && prevResult === "null") stamp(S.result.draw ? "draw" : "resign", S.result.draw ? S.result.why : winnerText(S.result));   // 對手認輸／雙方同意和棋
@@ -1681,16 +1688,24 @@ function tone(f, t0, dur, type, gain) {
   g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(gain, t0 + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
   o.connect(g); g.connect(a.destination); o.start(t0); o.stop(t0 + dur + 0.02);
 }
-function thud(t0, dur, gain, freq) {                                // 木頭敲擊：短的噪音 ＋ 低頻衰減
-  const a = AC, n = Math.floor(a.sampleRate * dur), buf = a.createBuffer(1, n, a.sampleRate), d = buf.getChannelData(0);
-  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3);
-  const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain();
-  src.buffer = buf; bp.type = "bandpass"; bp.frequency.value = freq; bp.Q.value = 0.8; g.gain.value = gain;
-  src.connect(bp); bp.connect(g); g.connect(a.destination); src.start(t0);
-  const o = a.createOscillator(), og = a.createGain();
-  o.type = "sine"; o.frequency.setValueAtTime(freq / 5, t0); o.frequency.exponentialRampToValueAtTime(freq / 9, t0 + dur);
-  og.gain.setValueAtTime(gain * 0.9, t0); og.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  o.connect(og); og.connect(a.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+/* 木頭棋子落在木棋盤上的「喀」：用模態合成（幾個高頻共振各自快速衰減）＋ 一瞬間的敲擊噪音 ＋ 棋盤的低頻悶響。
+   hard：1＝輕放，1.5＝重拍（吃子） */
+let clackBuf = null;
+function clack(t0, hard, pitch) {
+  const a = AC, sr = a.sampleRate, dur = 0.16, n = Math.floor(sr * dur);
+  const buf = a.createBuffer(1, n, sr), d = buf.getChannelData(0);
+  const modes = [[2100, 0.009, 1.0], [3300, 0.007, 0.7], [4700, 0.005, 0.45], [6400, 0.004, 0.3], [1250, 0.014, 0.5], [520, 0.03, 0.35]];   // [頻率, 衰減時間常數, 音量]
+  const ph = modes.map(() => Math.random() * 6.28);
+  for (let i = 0; i < n; i++) {
+    const t = i / sr; let v = 0;
+    for (let m = 0; m < modes.length; m++) { const [f, tau, g] = modes[m]; v += g * Math.sin(6.2832 * f * pitch * t + ph[m]) * Math.exp(-t / (tau * (hard > 1 ? 1.25 : 1))); }
+    if (t < 0.004) v += (Math.random() * 2 - 1) * (1 - t / 0.004) * 1.6;           // 接觸瞬間的噪音
+    v += 0.35 * Math.sin(6.2832 * 95 * t) * Math.exp(-t / 0.035);                  // 棋盤悶響
+    d[i] = v * 0.22 * hard * (i > n - 200 ? (n - i) / 200 : 1);
+  }
+  const src = a.createBufferSource(), lp = a.createBiquadFilter();
+  src.buffer = buf; lp.type = "lowpass"; lp.frequency.value = 9000;
+  src.connect(lp); lp.connect(a.destination); src.start(t0);
 }
 function sfx(kind) {
   if (S && S.sound === false) return;
@@ -1698,9 +1713,9 @@ function sfx(kind) {
   const t = a.currentTime + 0.01;
   try {
     switch (kind) {
-      case "pick": tone(1046, t, 0.05, "sine", 0.06); break;
-      case "move": thud(t, 0.09, 0.9, 1400); break;
-      case "cap": thud(t, 0.12, 1.1, 900); thud(t + 0.06, 0.08, 0.6, 1600); break;
+      case "pick": clack(t, 0.45, 1.25); break;                                    // 拿起：輕輕碰一下
+      case "move": clack(t, 1 + Math.random() * 0.15, 0.95 + Math.random() * 0.1); break;
+      case "cap": clack(t, 1.5, 0.85); clack(t + 0.045, 0.7, 1.1); break;             // 吃子：重拍，被吃的子彈一下
       case "check": tone(740, t + 0.12, 0.09, "square", 0.08); tone(988, t + 0.24, 0.16, "square", 0.08); break;
       case "warn": tone(260, t, 0.18, "sawtooth", 0.07); break;
       case "win": [523, 659, 784, 1047].forEach((f, i) => tone(f, t + 0.15 + i * 0.13, i === 3 ? 0.5 : 0.22, "triangle", 0.16)); break;
@@ -1709,8 +1724,36 @@ function sfx(kind) {
     }
   } catch (e) { }
 }
-addEventListener("pointerdown", () => ac(), { once: true, passive: true });   // 第一次碰畫面就把音訊打開（iOS 要在手勢裡）
-$("btnSound").onclick = () => { S.sound = S.sound === false; save(); renderPanel(); if (S.sound) sfx("pick"); };
+addEventListener("pointerdown", () => { ac(); sayWarm(); }, { once: true, passive: true });   // 第一次碰畫面就把音訊、語音打開（iOS 要在手勢裡）
+$("btnSound").onclick = () => { S.sound = S.sound === false; save(); renderPanel(); if (S.sound) sfx("move"); };
+$("btnVoice").onclick = () => { S.voice = S.voice === false; save(); renderPanel(); if (S.voice) say("語音開啟", true); };
+
+/* ───────── 語音（2026-10-29）：報棋步、將軍、絕殺、勝負；用瀏覽器內建的中文聲音 ───────── */
+let voiceObj = null, voiceWarm = false;
+function pickVoice() {
+  if (!("speechSynthesis" in window)) return null;
+  const vs = speechSynthesis.getVoices();
+  if (!vs.length) return null;
+  const pref = ["zh-TW", "zh_TW", "zh-HK", "zh-CN", "zh"];
+  for (const p of pref) { const v = vs.find(v => (v.lang || "").replace("_", "-").toLowerCase().startsWith(p.toLowerCase()) && !/eSpeak/i.test(v.name)); if (v) return v; }
+  return null;
+}
+if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => { voiceObj = pickVoice(); };
+function sayWarm() { if (!("speechSynthesis" in window) || voiceWarm) return; voiceWarm = true; try { const u = new SpeechSynthesisUtterance(""); u.volume = 0; speechSynthesis.speak(u); } catch (e) { } }
+/* 棋譜念法：俥傌砲→車馬炮、全形數字→中文、進退平照字念 */
+const SAY_MAP = { "俥": "車", "傌": "馬", "砲": "炮", "炮": "炮", "仕": "士", "相": "象", "１": "一", "２": "二", "３": "三", "４": "四", "５": "五", "６": "六", "７": "七", "８": "八", "９": "九" };
+function sayMove(note) { say(note.replace(/./g, ch => SAY_MAP[ch] || ch)); }
+function say(text, now) {
+  if (!text || !("speechSynthesis" in window) || (S && S.voice === false)) return;
+  try {
+    if (now) speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    if (!voiceObj) voiceObj = pickVoice();
+    if (voiceObj) u.voice = voiceObj;
+    u.lang = (voiceObj && voiceObj.lang) || "zh-TW"; u.rate = 1.05; u.pitch = 1;
+    speechSynthesis.speak(u);
+  } catch (e) { }
+}
 
 /* ───────── 啟動 ───────── */
 function start(data) {
