@@ -1912,7 +1912,7 @@ let hintLong = false, hintTimer = 0;
 $("btnHint").addEventListener("pointerdown", () => {
   clearTimeout(hintTimer); hintLong = false;
   if (!(PIKA || pikaUrl()) || S.mode === "online" || S.mode === "puzzle" || startB || sandbox || view != null || !myTurn()) return;
-  hintTimer = setTimeout(() => { hintLong = true; pikaHint(); }, 600);
+  hintTimer = setTimeout(() => { hintLong = true; pikaHint(); }, 2000);
 });
 for (const ev of ["pointerup", "pointerleave", "pointercancel"]) $("btnHint").addEventListener(ev, () => clearTimeout(hintTimer));
 $("btnHint").addEventListener("contextmenu", e => e.preventDefault());
