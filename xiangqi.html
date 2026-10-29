@@ -34,7 +34,10 @@
   .wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 22px;
     grid-template-columns: minmax(0, 620px) minmax(0, 340px); justify-content: center; align-items: start; }
   @media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 620px); } }
-  header.top { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  header.top { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 10px 14px; flex-wrap: wrap; }
+  @media (max-width: 600px) { header.top p { display: none; } header.top h1 { font-size: 30px; } }   /* 10-29：手機標題縮小，棋盤往上移 */
+  .iconbtn { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--rule); background: var(--panel); color: var(--ink); font-size: 16px; cursor: pointer; align-self: center; flex: none; }
+  .iconbtn[aria-pressed="false"] { opacity: .5; }
   header.top h1 { font-family: var(--f-display); font-weight: 400; font-size: clamp(34px, 6vw, 46px); line-height: 1; margin: 0; letter-spacing: .06em; }
   header.top p { margin: 0; color: var(--muted); font-size: 13px; }
   /* 象棋／圍棋切換（2026-10-13）；在 claude.ai 裡沒有圍棋那頁 → 藏起來 */
@@ -100,8 +103,24 @@
   .seg button { flex: 1; background: transparent; border: 0; color: var(--muted); font: inherit; font-size: 14px; padding: 7px 0; cursor: pointer; }
   .seg button + button { border-left: 1px solid var(--rule); }
   .seg button[aria-pressed="true"] { background: var(--jade-soft); color: var(--ink); font-weight: 700; }
-  .actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-  .btn { font: inherit; font-size: 14px; padding: 8px 6px; border-radius: 9px; border: 1px solid var(--rule); background: var(--ground); color: var(--ink); cursor: pointer; }
+  .actions { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  @media (max-width: 600px) { .actions { grid-template-columns: repeat(3, 1fr); } }
+  .btn { font: inherit; font-size: 14px; padding: 9px 6px; min-height: 40px; border-radius: 9px; border: 1px solid var(--rule); background: var(--panel); color: var(--ink); cursor: pointer; }
+  .boardcol .status { padding: 0 2px; min-height: 46px; }
+  /* 10-29：結束卡（勝負、殺法、步數）＋復盤列＋沙盤列都貼在棋盤下面 */
+  .endcard { border: 1px solid var(--rule); border-radius: 12px; background: var(--panel); padding: 12px 14px; display: grid; gap: 6px; }
+  .endcard .big { font-family: var(--f-display); font-size: 30px; line-height: 1.1; color: var(--red-side); }
+  .endcard .why { font-size: 13px; color: var(--muted); }
+  .endcard .row { margin-top: 4px; } .endcard .row .btn { flex: 1; }
+  .rv { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 8px; }
+  .rv .btn { padding: 8px 12px; min-width: 44px; } .rv .btn:first-child { margin-left: 0; }
+  .rv .note { flex: 1; }
+  details.setup summary { cursor: pointer; display: flex; gap: 8px; align-items: baseline; list-style: none; }
+  details.setup summary::-webkit-details-marker { display: none; }
+  details.setup summary::before { content: "▸"; color: var(--muted); font-size: 12px; } details.setup[open] summary::before { content: "▾"; }
+  details.setup summary .sum { font-size: 13px; color: var(--ink); }
+  details.setup[open] summary .sum { display: none; }
+  details.setup > .group, details.setup > .online { margin-top: 12px; }
   .btn.primary { background: var(--jade); border-color: var(--jade); color: #fff; font-weight: 700; }
   .btn:disabled { opacity: .45; cursor: default; }
   button:focus-visible, input:focus-visible { outline: 2px solid var(--jade); outline-offset: 2px; }
@@ -118,16 +137,17 @@
   .note.warn { color: var(--warn); }
   .who { font-size: 13px; }
 
-  .moves { max-height: 240px; overflow-y: auto; border-top: 1px solid var(--rule); padding-top: 8px; }
-  .moves table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
-  .moves td { padding: 3px 4px; }
-  .moves td.n { color: var(--muted); width: 2.5em; font-size: 12px; }
-  .moves td.r { color: var(--red-side); font-family: var(--f-piece); font-weight: 700; }
-  .moves td.k { font-family: var(--f-piece); font-weight: 700; }
-  .moves tr.last td.r, .moves tr.last td.k { text-decoration: underline; text-decoration-color: var(--jade); text-underline-offset: 4px; }
-  .moves td.r, .moves td.k { cursor: pointer; border-radius: 6px; }
-  .moves td.cur { background: rgba(120, 200, 160, .22); outline: 1px solid var(--jade); }
-  .moves td.r:hover, .moves td.k:hover { background: rgba(255,255,255,.06); }
+  /* 10-29：棋譜改成一串回合；手機上橫向捲、電腦上換行＋直向捲 */
+  .moves { position: relative; max-height: 220px; overflow-y: auto; border-top: 1px solid var(--rule); padding-top: 8px; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .pair { display: inline-flex; gap: 6px; align-items: baseline; white-space: nowrap; }
+  .pair i { font-style: normal; color: var(--muted); font-size: 12px; min-width: 1.8em; text-align: right; }
+  .pair b { font-family: var(--f-piece); font-weight: 700; padding: 1px 4px; border-radius: 6px; }
+  .pair b.r { color: var(--red-side); }
+  .pair b.sb { color: var(--jade); font-style: italic; }
+  .pair b.last { text-decoration: underline; text-decoration-color: var(--jade); text-underline-offset: 4px; }
+  .pair b.cur { background: rgba(120, 200, 160, .22); outline: 1px solid var(--jade); }
+  .moves.canpick b[data-k] { cursor: pointer; } .moves.canpick b[data-k]:hover { background: rgba(120, 200, 160, .12); }
+  @media (max-width: 900px) { .moves { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; max-height: none; padding-bottom: 6px; } }
   .empty { color: var(--muted); font-size: 13px; }
   details.rules { border-top: 1px solid var(--rule); padding-top: 10px; font-size: 14px; }
   details.rules summary { cursor: pointer; font-weight: 700; }
@@ -139,9 +159,15 @@
     <h1>楚河漢界</h1>
     <p>中國象棋：兩個人同一個畫面輪流下、各用各的手機連線，或跟電腦下。</p>
     <nav class="switch" id="switch" aria-label="回到棋類首頁"><a href="./">← 全部棋類</a></nav>
+    <button class="iconbtn" id="btnSound" title="音效開關" aria-pressed="true">🔊</button>
   </header>
 
   <div class="boardcol">
+    <div class="status" aria-live="polite">
+      <span class="turn-dot r" id="turnDot"></span>
+      <div><div class="msg" id="msg">紅方先走</div><div class="sub" id="sub">點一顆紅子開始</div></div>
+      <span class="check" id="check" hidden>將軍</span>
+    </div>
     <div class="tray" id="trayTop"></div>
     <div class="stage">
       <svg id="board" viewBox="0 0 560 620" role="img" aria-label="象棋棋盤"></svg>
@@ -149,32 +175,100 @@
     </div>
     <span class="prewarm" aria-hidden="true">將軍絕殺困斃楚河漢界紅方黑方勝</span>
     <div class="tray" id="trayBottom"></div>
+    <div class="endcard" id="endCard" hidden>
+      <div class="big" id="endBig"></div>
+      <div class="why" id="endWhy"></div>
+      <div class="row">
+        <button class="btn primary" id="endReview">復盤</button>
+        <button class="btn" id="endSandbox">沙盤推演</button>
+        <button class="btn" id="endAgain">再來一盤</button>
+      </div>
+    </div>
+    <div class="row rv" id="reviewBar" hidden>
+      <button class="btn" id="rvFirst" title="開局">⏮</button>
+      <button class="btn" id="rvPrev" title="上一步">◀</button>
+      <button class="btn" id="rvNext" title="下一步">▶</button>
+      <button class="btn" id="rvLast" title="最後一步">⏭</button>
+      <button class="btn" id="rvSandbox">沙盤推演</button>
+      <button class="btn" id="rvExit">結束復盤</button>
+    </div>
+    <div class="row rv" id="sandboxBar" hidden>
+      <span class="note">沙盤推演：兩邊的棋子都可以動，不會記進棋譜</span>
+      <button class="btn primary" id="sbExit">回到復盤</button>
+    </div>
+    <div class="actions" id="actions">
+      <button class="btn" id="btnUndo">悔棋</button>
+      <button class="btn" id="btnHint">提示</button>
+      <button class="btn" id="btnFlip">翻轉</button>
+      <button class="btn" id="btnNew">新局</button>
+      <button class="btn" id="btnDraw">求和</button>
+      <button class="btn" id="btnGiveUp">認輸</button>
+    </div>
+    <div class="confirm" id="confirm" hidden>
+      <span id="confirmText">放棄這盤、重新開始？</span>
+      <button class="btn primary" id="confirmYes">確定</button>
+      <button class="btn" id="confirmNo">取消</button>
+    </div>
   </div>
 
   <aside class="panel">
-    <div class="status" aria-live="polite">
-      <span class="turn-dot r" id="turnDot"></span>
-      <div><div class="msg" id="msg">紅方先走</div><div class="sub" id="sub">點一顆紅子開始</div></div>
-      <span class="check" id="check" hidden>將軍</span>
-    </div>
-
-    <div class="group">
-      <span class="label">玩法</span>
-      <div class="seg" id="modeSeg">
-        <button data-mode="local" aria-pressed="true">雙人同機</button>
-        <button data-mode="online" aria-pressed="false">連線對戰</button>
-        <button data-mode="ai" aria-pressed="false">對電腦</button>
+    <details class="setup" id="setup" open>
+      <summary><span class="label">設定</span><span class="sum" id="setupSum"></span></summary>
+      <div class="group">
+        <span class="label">玩法</span>
+        <div class="seg" id="modeSeg">
+          <button data-mode="local" aria-pressed="true">雙人同機</button>
+          <button data-mode="online" aria-pressed="false">連線對戰</button>
+          <button data-mode="ai" aria-pressed="false">對電腦</button>
+        </div>
       </div>
-    </div>
 
-    <div class="group" id="localOpts">
-      <span class="label">棋子方向</span>
-      <div class="seg" id="faceSeg">
-        <button data-face="1" aria-pressed="true">對坐</button>
-        <button data-face="0" aria-pressed="false">同一邊看</button>
+      <div class="group" id="localOpts">
+        <span class="label">棋子方向</span>
+        <div class="seg" id="faceSeg">
+          <button data-face="1" aria-pressed="true">對坐</button>
+          <button data-face="0" aria-pressed="false">同一邊看</button>
+        </div>
+        <span class="note">對坐：手機平放在兩人中間，上方那一方的字轉向對面。</span>
       </div>
-      <span class="note">對坐：手機平放在兩人中間，上方那一方的字轉向對面。</span>
-    </div>
+
+      <div class="group" id="aiOpts" hidden>
+        <span class="label">我執</span>
+        <div class="seg" id="sideSeg">
+          <button data-red="1" aria-pressed="true">紅方（先走）</button>
+          <button data-red="0" aria-pressed="false">黑方</button>
+        </div>
+        <span class="label" style="margin-top:6px">電腦棋力</span>
+        <div class="seg" id="lvlSeg">
+          <button data-lv="0" aria-pressed="false">入門</button>
+          <button data-lv="1" aria-pressed="false">初級</button>
+          <button data-lv="2" aria-pressed="true">業餘</button>
+          <button data-lv="3" aria-pressed="false">中級</button>
+          <button data-lv="4" aria-pressed="false">高級</button>
+          <button data-lv="5" aria-pressed="false">進階</button>
+        </div>
+        <span class="label" style="margin-top:6px">電腦棋風</span>
+        <div class="seg" id="styleSeg">
+          <button data-style="random" aria-pressed="true">隨機</button>
+          <button data-style="attack" aria-pressed="false">搶攻</button>
+          <button data-style="sac" aria-pressed="false">棄子</button>
+          <button data-style="solid" aria-pressed="false">穩健</button>
+          <button data-style="plain" aria-pressed="false">純算</button>
+        </div>
+        <span class="note">隨機：每盤從搶攻、棄子、穩健抽一種。除了純算，電腦都會設局（故意送子引你吃）、也會起疑（你送子時多想幾步再吃）。</span>
+      </div>
+
+      <div class="group" id="undoOpts">
+        <span class="label">悔棋限制（每人每盤）</span>
+        <div class="seg" id="undoSeg">
+          <button data-u="0" aria-pressed="false">不能悔</button>
+          <button data-u="1" aria-pressed="false">1 次</button>
+          <button data-u="3" aria-pressed="true">3 次</button>
+          <button data-u="-1" aria-pressed="false">不限</button>
+        </div>
+        <span class="note" id="undoNote">連線時下完一盤（或還沒開始）才能改。</span>
+      </div>
+    </details>
 
     <div class="online" id="onlineBox" hidden>
       <div id="onlineLobby">
@@ -196,10 +290,9 @@
         <div class="note" id="lobbyNote" style="margin-top:8px"></div>
       </div>
       <div id="onlineRoom" hidden>
-        <div class="room"><span class="label">房號</span><span class="code" id="roomCode">----</span><button class="btn" id="btnCopy" style="padding:4px 10px;font-size:13px">複製</button></div>
+        <div class="room"><span class="label">房號</span><span class="code" id="roomCode">----</span><button class="btn" id="btnCopy" style="padding:4px 10px;font-size:13px;min-height:0">複製</button></div>
         <div class="who" id="roomWho"></div>
         <div class="row">
-          <button class="btn" id="btnResign">認輸</button>
           <button class="btn" id="btnRematch">再來一盤</button>
           <button class="btn" id="btnSwap">交換紅黑</button>
           <button class="btn" id="btnLeave">離開房間</button>
@@ -208,67 +301,8 @@
       </div>
     </div>
 
-    <div class="group" id="aiOpts" hidden>
-      <span class="label">我執</span>
-      <div class="seg" id="sideSeg">
-        <button data-red="1" aria-pressed="true">紅方（先走）</button>
-        <button data-red="0" aria-pressed="false">黑方</button>
-      </div>
-      <span class="label" style="margin-top:6px">電腦棋力</span>
-      <div class="seg" id="lvlSeg">
-        <button data-lv="0" aria-pressed="false">入門</button>
-        <button data-lv="1" aria-pressed="false">初級</button>
-        <button data-lv="2" aria-pressed="true">業餘</button>
-        <button data-lv="3" aria-pressed="false">中級</button>
-        <button data-lv="4" aria-pressed="false">高級</button>
-        <button data-lv="5" aria-pressed="false">進階</button>
-      </div>
-      <span class="label" style="margin-top:6px">電腦棋風</span>
-      <div class="seg" id="styleSeg">
-        <button data-style="random" aria-pressed="true">隨機</button>
-        <button data-style="attack" aria-pressed="false">搶攻</button>
-        <button data-style="sac" aria-pressed="false">棄子</button>
-        <button data-style="solid" aria-pressed="false">穩健</button>
-        <button data-style="plain" aria-pressed="false">純算</button>
-      </div>
-      <span class="note">隨機：每盤從搶攻、棄子、穩健抽一種。除了純算，電腦都會設局（故意送子引你吃）、也會起疑（你送子時多想幾步再吃）。</span>
-    </div>
-
-    <div class="actions">
-      <button class="btn primary" id="btnNew">新局</button>
-      <button class="btn" id="btnUndo">悔棋</button>
-      <button class="btn" id="btnHint">提示</button>
-      <button class="btn" id="btnFlip">翻轉</button>
-      <button class="btn" id="btnDraw">求和</button>
-      <button class="btn" id="btnGiveUp">認輸</button>
-    </div>
-    <div class="confirm" id="confirm" hidden>
-      <span id="confirmText">放棄這盤、重新開始？</span>
-      <button class="btn primary" id="confirmYes">確定</button>
-      <button class="btn" id="confirmNo">取消</button>
-    </div>
-
-    <div class="group" id="undoOpts">
-      <span class="label">悔棋限制（每人每盤）</span>
-      <div class="seg" id="undoSeg">
-        <button data-u="0" aria-pressed="false">不能悔</button>
-        <button data-u="1" aria-pressed="false">1 次</button>
-        <button data-u="3" aria-pressed="true">3 次</button>
-        <button data-u="-1" aria-pressed="false">不限</button>
-      </div>
-      <span class="note" id="undoNote">悔棋和「退回到某一步」都算一次。連線時下完一盤（或還沒開始）才能改。</span>
-    </div>
-
     <div class="group">
       <span class="label">棋譜</span>
-      <div class="row" id="reviewBar" style="margin:4px 0 8px;gap:6px;flex-wrap:wrap">
-        <button class="btn" id="rvFirst" title="第一步" style="padding:4px 10px;font-size:13px">⏮</button>
-        <button class="btn" id="rvPrev" title="上一步" style="padding:4px 10px;font-size:13px">◀</button>
-        <button class="btn" id="rvNext" title="下一步" style="padding:4px 10px;font-size:13px">▶</button>
-        <button class="btn" id="rvLast" title="最新" style="padding:4px 10px;font-size:13px">⏭</button>
-        <button class="btn" id="rvLive" hidden style="padding:4px 10px;font-size:13px">回到現在</button>
-        <button class="btn primary" id="rvRollback" hidden style="padding:4px 10px;font-size:13px">退回到這一步</button>
-      </div>
       <div class="moves" id="moves"><div class="empty">還沒有棋步。紅方先走，例如「炮二平五」（當頭炮）。</div></div>
     </div>
     <details class="rules"><summary>玩法說明</summary>
@@ -282,6 +316,7 @@
         <li><b>長將、長捉</b>：同一個局面要第三次出現時，一直將軍（長將）或一直追著要吃同一顆子（長捉）的一方必須變招，不能再走那一步；雙方都只是閒著走就判和（不變作和）。</li>
         <li><b>和棋</b>：連續 60 回合沒有吃子；雙方都沒有能過河進攻的子；也可以提出求和、或認輸。</li>
         <li><b>電腦棋風</b>：搶攻型把子力往你的九宮壓；棄子型願意用子換攻勢；穩健型先顧好自己的帥。三種都會設局（故意送子，你吃了反而虧）和起疑（你送子時多算幾步再決定吃不吃）。「純算」就是沒有棋風、只算分數的原本電腦。</li>
+        <li><b>復盤、沙盤推演</b>：下完一盤才有。復盤可以用 ◀ ▶ 或點棋譜看每一步；沙盤推演從復盤的任何一個局面開始，兩邊的棋子都由你動，看看換一種走法會怎樣，不會記進棋譜。</li>
       </ul>
     </details>
   </aside>
@@ -613,11 +648,13 @@ if (/claude/.test(location.hostname)) $("switch").hidden = true;   // claude.ai 
 let S = null, G = null;
 let sel = -1, targets = [], hint = null, thinking = false, token = 0, pendingConfirm = null;
 let GF = null;          // 完整棋局（棋譜用）；復盤時 G 是看到第 view 步的局面
-let view = null;        // 復盤：正在看第幾步（null = 現在）
+let view = null;        // 復盤：正在看第幾步（null = 現在；下完才能看，可以等於步數＝最後的局面）
+let sandbox = null;     // 沙盤推演：{ base: 從第幾步的局面開始, moves: [] }，不存檔、不記進棋譜
+let setupOpen = null;   // 設定區展開？null = 自動（還沒開始就展開，走了第一步就收起）
 let NET = { db: null, me: null, unsub: null, game: null, note: "" };   // 連線狀態（不存檔）
 
 function defaults() {
-  return { mode: "local", moves: [], flipped: false, humanRed: true, level: 2, lvV: 2, style: "random", styleNow: null, seatRed: true, online: null, result: null, face: true, undoLimit: 3, undos: { r: 0, k: 0 } };
+  return { mode: "local", moves: [], flipped: false, humanRed: true, level: 2, lvV: 2, style: "random", styleNow: null, seatRed: true, online: null, result: null, face: true, undoLimit: 3, undos: { r: 0, k: 0 }, sound: true };
 }
 /* 對坐：只在雙人同機時，畫面上方那一方的字轉 180 度 */
 const faceOn = () => S.mode === "local" && S.face !== false;
@@ -667,27 +704,27 @@ function severity(before, after, side) {
   return 0;
 }
 function minSev(seg, red) { const s = seg.filter(h => h.red === red); return s.length ? Math.min(...s.map(h => h.sev)) : 0; }
-function occurrences(key) { const occ = []; G.keys.forEach((k, i) => { if (k === key) occ.push(i); }); return occ; }
+function occurrences(key, X = G) { const occ = []; X.keys.forEach((k, i) => { if (k === key) occ.push(i); }); return occ; }
 /* 這一步會不會犯「長將／長捉」：會就回傳名稱，不會回傳 null */
-function forbidden(m) {
-  const b = G.b.slice(); E.make(b, m);
-  const occ = occurrences(posKey(b, !G.red));
+function forbidden(m, X = G) {
+  const b = X.b.slice(); E.make(b, m);
+  const occ = occurrences(posKey(b, !X.red), X);
   if (occ.length < 2) return null;
-  const sev = severity(G.b, b, G.red);
+  const sev = severity(X.b, b, X.red);
   if (!sev) return null;
-  const seg = G.hist.slice(occ[0]).concat([{ red: G.red, sev }]);
-  const mine = minSev(seg, G.red), theirs = minSev(seg, !G.red);
+  const seg = X.hist.slice(occ[0]).concat([{ red: X.red, sev }]);
+  const mine = minSev(seg, X.red), theirs = minSev(seg, !X.red);
   return mine > theirs ? (mine === 2 ? "長將" : "長捉") : null;
 }
 function bannedMoves() { return E.legal(G.b.slice(), G.red).filter(m => forbidden(m)); }
-function repetitionDraw() {
-  const occ = occurrences(G.keys[G.keys.length - 1]);
+function repetitionDraw(X = G) {
+  const occ = occurrences(X.keys[X.keys.length - 1], X);
   if (occ.length < 3) return false;
-  const seg = G.hist.slice(occ[0]);
+  const seg = X.hist.slice(occ[0]);
   return minSev(seg, true) === minSev(seg, false);
 }
-function quietPlies() { let n = 0; for (let i = G.hist.length - 1; i >= 0 && G.hist[i].cap === "."; i--) n++; return n; }
-const noAttackers = () => !G.b.some(p => "RNCPrncp".includes(p));
+function quietPlies(X = G) { let n = 0; for (let i = X.hist.length - 1; i >= 0 && X.hist[i].cap === "."; i--) n++; return n; }
+const noAttackers = (X = G) => !X.b.some(p => "RNCPrncp".includes(p));
 
 function notation(b, m) {
   const f = (m / 100) | 0, t = m % 100, p = b[f], red = E.isRed(p), T = p.toUpperCase();
@@ -805,25 +842,38 @@ function drawPieces(landed) {
 }
 
 /* ───────── 局面判斷 ───────── */
-let overMemo = { key: null, val: null };
+/* 只看局面的勝負（X：棋局物件）。gameOver 看完整棋局 GF（復盤時 G 只是中途的局面）；sbOver 看沙盤的 G */
+function posOver(X) {
+  const legalNow = E.legal(X.b.slice(), X.red);
+  if (!legalNow.length) return { winRed: !X.red, kind: E.inCheck(X.b, X.red) ? "mate" : "stale", why: E.inCheck(X.b, X.red) ? "將死" : "困斃（無子可動）" };
+  if (repetitionDraw(X)) return { draw: true, kind: "draw", why: "同一局面重複三次，不變作和" };
+  if (quietPlies(X) >= 120) return { draw: true, kind: "draw", why: "連續 60 回合沒有吃子，判和" };
+  if (noAttackers(X)) return { draw: true, kind: "draw", why: "雙方都沒有能進攻的子，判和" };
+  const f = legalNow.map(m => forbidden(m, X));
+  if (f.every(Boolean)) return { winRed: !X.red, kind: "perp", why: f[0] + "不變，判負" };
+  return null;
+}
+let overMemo = { key: null, val: null }, sbMemo = { key: null, val: null };
 function gameOver() {
-  if (S.result) return S.result;                                   // 連線認輸
+  if (S.result) return S.result;                                   // 認輸、同意和棋
   const key = S.moves.join(",");
   if (overMemo.key === key) return overMemo.val;
-  let val = null;
-  const legalNow = E.legal(G.b.slice(), G.red);
-  if (!legalNow.length) val = { winRed: !G.red, kind: E.inCheck(G.b, G.red) ? "mate" : "stale", why: E.inCheck(G.b, G.red) ? "將死" : "困斃（無子可動）" };
-  else if (repetitionDraw()) val = { draw: true, kind: "draw", why: "同一局面重複三次，不變作和" };
-  else if (quietPlies() >= 120) val = { draw: true, kind: "draw", why: "連續 60 回合沒有吃子，判和" };
-  else if (noAttackers()) val = { draw: true, kind: "draw", why: "雙方都沒有能進攻的子，判和" };
-  else {
-    const f = legalNow.map(forbidden);
-    if (f.every(Boolean)) val = { winRed: !G.red, kind: "perp", why: f[0] + "不變，判負" };
-  }
+  const val = posOver(GF);
   overMemo = { key, val };
   return val;
 }
+function sbOver() {
+  if (!sandbox) return null;
+  const key = sandbox.base + ":" + sandbox.moves.join(",");
+  if (sbMemo.key === key) return sbMemo.val;
+  const val = posOver(G);
+  sbMemo = { key, val };
+  return val;
+}
+const canReview = () => !!gameOver() && S.moves.length > 0 && !thinking;   // 復盤：下完才有
+function viewerRed() { return S.mode === "ai" ? S.humanRed : S.mode === "online" && S.online ? S.online.red : null; }
 function myTurn() {
+  if (sandbox) return !thinking && !sbOver();                      // 沙盤：兩邊都是你
   if (gameOver() || thinking || view != null) return false;
   if (S.mode === "ai") return G.red === S.humanRed;
   if (S.mode === "online") {
@@ -833,23 +883,36 @@ function myTurn() {
   return true;
 }
 
+const LEVEL_NAMES = ["入門", "初級", "業餘", "中級", "高級", "進階"];
+let nameMemo = { key: null, val: null };
+function endInfo(over) {                                           // 結束卡第二行：殺法／原因、步數、電腦設定
+  let name = null;
+  if (over.kind === "mate" && !S.result) {
+    const key = S.moves.join(",");
+    if (nameMemo.key !== key) { let v = null; try { v = mateName(GF.b, GF.red, GF.hist[GF.hist.length - 1]); } catch (e) { } nameMemo = { key, val: v }; }
+    name = nameMemo.val;
+  }
+  const parts = [name ? `${name}絕殺` : over.why, `共 ${S.moves.length} 步`];
+  if (S.mode === "ai") parts.push(`電腦${LEVEL_NAMES[S.level] || ""}・${S.style !== "plain" && S.styleNow ? STYLE_NAMES[S.styleNow] : "純算"}`);
+  return parts.join("　");
+}
 function renderPanel() {
-  const over = gameOver();
+  const over = sandbox ? sbOver() : gameOver();
+  const n = S.moves.length, reviewing = !sandbox && view != null;
   const check = !over && E.inCheck(G.b, G.red);
   $("turnDot").className = "turn-dot " + (G.red ? "r" : "k");
   $("check").hidden = !check;
   let msg, sub;
   const side = G.red ? "紅方" : "黑方";
-  if (over && over.draw) {
-    msg = "和棋";
-    sub = over.why + "。" + (S.mode === "online" ? "按「再來一盤」重新開始。" : "按「新局」再來一盤。");
-  } else if (over) {
-    const w = over.winRed ? "紅方" : "黑方";
-    msg = `${w}勝`;
-    if (S.mode === "ai") msg = over.winRed === S.humanRed ? "你贏了！" : "電腦贏了";
-    if (S.mode === "online" && S.online) msg = over.winRed === S.online.red ? "你贏了！" : "對手贏了";
-    sub = over.why + "。" + (S.mode === "online" ? "按「再來一盤」重新開始。" : "按「新局」再來一盤。");
-  } else if (view != null) { msg = `${S.mode === "online" && S.online ? "一起復盤" : "復盤"}：第 ${view} 步／共 ${S.moves.length} 步`; sub = view === 0 ? "開局。按 ▶ 往後看，「回到現在」繼續下" : `${GF.hist[view - 1].red ? "紅" : "黑"}：${GF.hist[view - 1].note}。點棋譜或 ◀ ▶ 看每一步`; }
+  if (sandbox) {
+    const k = sandbox.moves.length;
+    if (over) { msg = over.draw ? "沙盤：和棋" : `沙盤：${over.winRed ? "紅方" : "黑方"}勝`; sub = over.why + "。按「退一步」換一種走法"; }
+    else { msg = `沙盤推演・${side}走`; sub = (k ? `從第 ${sandbox.base} 步起走了 ${k} 步` : `從第 ${sandbox.base} 步的局面開始`) + (check ? "，被將軍了" : "") + "。想退就按「退一步」"; }
+  } else if (reviewing) {
+    msg = `復盤：第 ${view} 步／共 ${n} 步`;
+    sub = view === 0 ? "開局。按 ▶ 往後看" : `${GF.hist[view - 1].red ? "紅" : "黑"}：${GF.hist[view - 1].note}。點棋譜或 ◀ ▶ 看每一步，想試別的走法按「沙盤推演」`;
+  } else if (over && over.draw) { msg = "和棋"; sub = over.why; }
+  else if (over) { msg = winnerText(over); sub = over.why; }
   else if (thinking) { msg = "電腦思考中…"; sub = "可以先看一下棋譜"; }
   else if (S.mode === "online") {
     if (!S.online) { msg = "連線對戰"; sub = "開新房間，或輸入對手給你的房號"; }
@@ -867,32 +930,50 @@ function renderPanel() {
   $("trayTop").innerHTML = tray(S.flipped);
   $("trayTop").classList.toggle("turned", faceOn());
 
-  const h = GF.hist, cur = view == null ? h.length : view;
-  if (!h.length) $("moves").innerHTML = `<div class="empty">還沒有棋步。紅方先走，例如「炮二平五」（當頭炮）。</div>`;
+  // 棋譜：正式的步 ＋ 沙盤裡走的步（綠色斜體、不能點）
+  const h = GF.hist, base = sandbox ? sandbox.base : h.length;
+  const all = h.slice(0, base).concat(sandbox ? G.hist.slice(base) : []);
+  const cur = sandbox ? all.length : view == null ? h.length : view;
+  const box = $("moves");
+  box.classList.toggle("canpick", canReview());
+  if (!all.length) box.innerHTML = `<div class="empty">還沒有棋步。紅方先走，例如「炮二平五」（當頭炮）。</div>`;
   else {
-    let rows = "";
-    for (let i = 0; i < h.length; i += 2) {
-      const c1 = i + 1 === cur ? " cur" : "", c2 = i + 2 === cur ? " cur" : "";
-      rows += `<tr class="${i + 2 >= h.length && view == null ? "last" : ""}"><td class="n">${i / 2 + 1}.</td><td class="r${c1}" data-k="${i + 1}">${h[i].note}</td><td class="k${c2}" data-k="${i + 2}">${h[i + 1] ? h[i + 1].note : ""}</td></tr>`;
-    }
-    const box = $("moves"); box.innerHTML = `<table>${rows}</table>`;
+    const cell = j => {
+      const e = all[j]; if (!e) return "";
+      const k = j + 1, sb = j >= base;
+      const cls = (e.red ? "r" : "k") + (sb ? " sb" : "") + (k === cur ? " cur" : "") + (!sandbox && view == null && k === all.length ? " last" : "");
+      return `<b class="${cls}"${sb ? "" : ` data-k="${k}"`}>${e.note}</b>`;
+    };
+    let out = "";
+    for (let i = 0; i < all.length; i += 2) out += `<span class="pair"><i>${i / 2 + 1}.</i>${cell(i)}${cell(i + 1)}</span>`;
+    box.innerHTML = out;
     // 只捲棋譜框裡面，不動整個網頁（2026-10-17：scrollIntoView 會讓手機畫面每走一步就跳到棋譜）
-    const el = box.querySelector("td.cur");
-    if (view == null || !el) box.scrollTop = box.scrollHeight;
-    else { const br = box.getBoundingClientRect(), er = el.getBoundingClientRect(); if (er.top < br.top || er.bottom > br.bottom) box.scrollTop += er.top - br.top - br.height / 2 + er.height / 2; }
+    const el = box.querySelector("b.cur") || box.querySelector("b.last") || box.lastElementChild;
+    if (el) { box.scrollTop = el.offsetTop - box.clientHeight / 2; box.scrollLeft = el.offsetLeft - box.clientWidth / 2; }
   }
-  const n = S.moves.length;
-  $("rvFirst").disabled = $("rvPrev").disabled = !n || cur === 0;
-  $("rvNext").disabled = $("rvLast").disabled = !n || view == null;
-  $("rvLive").hidden = view == null;
-  const rbOk = view != null && !thinking && (S.mode !== "online" || (S.online && NET.game && NET.game.red && NET.game.black));
-  $("rvRollback").hidden = !rbOk;
-  if (rbOk) { const left = undoLeft(undoSide()); $("rvRollback").disabled = left <= 0; $("rvRollback").title = left <= 0 ? "悔棋次數用完了" : ""; }
-  document.querySelectorAll("#undoSeg button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.u) === undoLimit()));
-  const fresh = !n || !!over;
-  document.querySelectorAll("#undoSeg button").forEach(b => b.disabled = S.mode === "online" && (!S.online || !fresh));
-  { const L = undoLimit(), left = undoLeft(undoSide()); $("btnUndo").textContent = L < 0 ? "悔棋" : `悔棋（剩 ${left}）`; }
 
+  // 結束卡／復盤列／沙盤列（都在棋盤下面）
+  const endShow = !!over && !sandbox && view == null;
+  $("endCard").hidden = !endShow;
+  if (endShow) {
+    $("endBig").textContent = over.draw ? "和棋" : winnerText(over);
+    $("endWhy").textContent = endInfo(over);
+    $("endAgain").hidden = S.mode === "online" && !(S.online && NET.game);
+  }
+  $("reviewBar").hidden = !reviewing;
+  $("sandboxBar").hidden = !sandbox;
+  $("rvFirst").disabled = $("rvPrev").disabled = !view;
+  $("rvNext").disabled = $("rvLast").disabled = view == null || view >= n;
+
+  // 設定區：還沒開始就展開；走了第一步收成一行
+  const L = undoLimit(), undoTxt = L < 0 ? "悔棋不限" : L === 0 ? "不能悔棋" : `悔棋 ${L} 次`;
+  $("setupSum").textContent = S.mode === "ai" ? `對電腦・${LEVEL_NAMES[S.level] || ""}・${S.style === "plain" ? "純算" : S.styleNow ? STYLE_NAMES[S.styleNow] : "隨機"}・${undoTxt}`
+    : S.mode === "local" ? `雙人同機・${S.face !== false ? "對坐" : "同一邊看"}・${undoTxt}` : `連線對戰・${undoTxt}`;
+  const wantOpen = setupOpen == null ? !n : setupOpen;
+  if ($("setup").open !== wantOpen) $("setup").open = wantOpen;
+  document.querySelectorAll("#undoSeg button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.u) === L));
+  const fresh = !n || !!gameOver();
+  document.querySelectorAll("#undoSeg button").forEach(b => b.disabled = S.mode === "online" && (!S.online || !fresh));
   document.querySelectorAll("#modeSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === S.mode));
   $("aiOpts").hidden = S.mode !== "ai";
   $("localOpts").hidden = S.mode !== "local";
@@ -902,14 +983,17 @@ function renderPanel() {
   document.querySelectorAll("#seatSeg button").forEach(b => b.setAttribute("aria-pressed", (b.dataset.red === "1") === S.seatRed));
   document.querySelectorAll("#lvlSeg button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.lv) === S.level));
   document.querySelectorAll("#styleSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.style === (S.style || "random")));
-  const online = S.mode === "online";
+
+  // 操作列
+  const online = S.mode === "online", both = !!(S.online && NET.game && NET.game.red && NET.game.black);
+  { const left = undoLeft(undoSide()); $("btnUndo").textContent = sandbox ? "退一步" : L < 0 ? "悔棋" : `悔棋 ${left}`; }
+  $("btnUndo").disabled = sandbox ? !sandbox.moves.length || thinking : (thinking || view != null || !undoCount());
+  $("btnHint").disabled = thinking || !myTurn();
   $("btnNew").hidden = online;
-  $("btnUndo").disabled = thinking || view != null || !undoCount();
-  $("btnHint").disabled = thinking || !!over || !myTurn();
-  if (view != null) { $("btnDraw").disabled = true; $("btnGiveUp").disabled = true; }
-  $("btnGiveUp").hidden = online;
-  $("btnGiveUp").disabled = thinking || !!over || !S.moves.length;
-  $("btnDraw").disabled = thinking || !!over || !S.moves.length || (online && (!S.online || !NET.game || !NET.game.red || !NET.game.black));
+  const busy = thinking || !!over || !n || view != null || (online && !both);
+  $("btnGiveUp").disabled = busy;
+  $("btnDraw").disabled = busy;
+  $("btnSound").setAttribute("aria-pressed", S.sound !== false); $("btnSound").textContent = S.sound !== false ? "🔊" : "🔇";
   renderOnline();
 }
 function lastText(check) {
@@ -920,7 +1004,8 @@ function lastText(check) {
 }
 function render(landed) {
   drawPieces(landed); renderPanel();
-  if (!gameOver() || view != null) { const f = $("fx").querySelector(".mate, .stale"); if (f) f.remove(); }   // 悔棋、新局、復盤 → 收掉絕殺章
+  const keep = sandbox ? !!sbOver() : (!!gameOver() && view == null);
+  if (!keep) { const f = $("fx").querySelector(".mate, .stale"); if (f) f.remove(); }   // 悔棋、新局、復盤 → 收掉絕殺章
 }
 
 /* 絕殺時辨認殺法（名稱照維基教科書《中國象棋／基本殺法列表》）；認不出來就回 null，印章照舊寫「絕殺」 */
@@ -1018,6 +1103,7 @@ function mateName(b, red, last) {
 /* 將軍／絕殺／困斃：棋盤中央蓋一個印章 */
 function winnerText(over) {
   if (over.draw) return over.why;
+  if (sandbox) return (over.winRed ? "紅方" : "黑方") + "勝";
   if (S.mode === "ai") return over.winRed === S.humanRed ? "你贏了" : "電腦贏了";
   if (S.mode === "online" && S.online) return over.winRed === S.online.red ? "你贏了" : "對手贏了";
   return (over.winRed ? "紅方" : "黑方") + "勝";
@@ -1035,10 +1121,18 @@ function stamp(kind, sub, bigText) {
   box.appendChild(d);
   if (kind === "check" || kind === "warn") setTimeout(() => d.remove(), 1700);
   else { svg.classList.remove("shake"); void svg.getBoundingClientRect(); svg.classList.add("shake"); }
+  sfx(stampSound(kind));
+}
+function stampSound(kind) {
+  if (kind === "check" || kind === "warn" || kind === "draw") return kind;
+  const over = sandbox ? sbOver() : gameOver(), vr = sandbox ? null : viewerRed();
+  if (!over || over.draw) return "draw";
+  if (vr == null) return "win";
+  return over.winRed === vr ? "win" : "lose";
 }
 function announce() {
-  const over = gameOver();
-  if (over && !S.result) {
+  const over = sandbox ? sbOver() : gameOver();
+  if (over && (sandbox || !S.result)) {
     const kind = over.kind || (E.inCheck(G.b, G.red) ? "mate" : "stale");
     let name = null;
     if (kind === "mate") try { name = mateName(G.b, G.red, G.hist[G.hist.length - 1]); } catch (e) { }
@@ -1071,23 +1165,38 @@ function save() {
 }
 function rebuild(landed) {
   try { GF = replay(S.moves); } catch (e) { S.moves = []; GF = replay([]); }
-  if (view != null && view >= S.moves.length) view = null;
-  G = view == null ? GF : replay(S.moves.slice(0, view));
+  const n = S.moves.length;
+  if (!n || (view != null && view > n)) { view = null; sandbox = null; }
+  if (sandbox && sandbox.base > n) sandbox = null;
+  if (sandbox) { try { G = replay(S.moves.slice(0, sandbox.base).concat(sandbox.moves)); } catch (e) { sandbox = null; } }
+  if (!sandbox) G = view == null || view >= n ? GF : replay(S.moves.slice(0, view));
   sel = -1; targets = []; hint = null;
   render(view == null ? landed : undefined);
 }
-/* 復盤：看第 k 步的局面（k = 步數，0 = 開局；到最新一步就回到「現在」） */
-function setView(k, fromRemote) {
+/* 復盤（2026-10-29 改成下完才有、各看各的）：看第 k 步的局面（0 = 開局，= 步數 → 最後的局面；null = 結束復盤） */
+function setView(k) {
+  if (sandbox) { sandbox = null; token++; thinking = false; }
   const n = S.moves.length;
-  const next = (k == null || k >= n) ? null : Math.max(0, k);
-  const changed = next !== view;
-  view = next;
-  G = view == null ? GF : replay(S.moves.slice(0, view));
+  view = (k == null || !n) ? null : Math.min(n, Math.max(0, k));
+  G = view == null || view >= n ? GF : replay(S.moves.slice(0, view));
   sel = -1; targets = []; hint = null;
   render();
-  // 連線：復盤是兩個人一起看（Gabi 2026-10-17）——我翻到哪一步，對手的棋盤也跟著到那一步
-  if (changed && !fromRemote && S.mode === "online" && S.online && NET.game) pushOnline({ review: view == null ? null : { at: view, by: S.online.red, id: Date.now() } });
 }
+/* 沙盤推演：從復盤的局面開始，兩邊都自己動；退一步只退沙盤裡的步 */
+function enterSandbox() {
+  if (!canReview()) return;
+  const k = view == null ? S.moves.length : view;
+  sandbox = { base: k, moves: [] }; view = k; token++; thinking = false;
+  G = replay(S.moves.slice(0, k));
+  sel = -1; targets = []; hint = null; render();
+}
+function sandboxUndo() {
+  if (!sandbox || !sandbox.moves.length || thinking) return;
+  sandbox.moves.pop(); token++;
+  G = replay(S.moves.slice(0, sandbox.base).concat(sandbox.moves));
+  sel = -1; targets = []; hint = null; render();
+}
+function exitSandbox() { if (!sandbox) return; const k = sandbox.base; sandbox = null; token++; thinking = false; setView(k); }
 /* 悔棋次數：limit -1 = 不限；used 由各邊各自累計 */
 function undoLimit() { return S.mode === "online" ? (NET.game && NET.game.undoLimit != null ? NET.game.undoLimit : 3) : (S.undoLimit == null ? 3 : S.undoLimit); }
 function undoUsed(red) { return S.mode === "online" ? (((NET.game && NET.game.undos) || {})[red ? "red" : "black"] || 0) : ((S.undos || {})[red ? "r" : "k"] || 0); }
@@ -1101,11 +1210,22 @@ function undoSide() { return S.mode === "online" ? !!(S.online && S.online.red) 
 
 /* 本機下一步 */
 function play(m) {
+  const capNow = G.b[m % 100] !== ".";
+  if (sandbox) {                                                    // 沙盤：只動 G，不存檔、不叫電腦、不送對手
+    sandbox.moves.push(m);
+    const before = G.b.slice(), note = notation(G.b, m), red = G.red, cap = E.make(G.b, m);
+    G.hist.push({ m, cap, note, red, sev: severity(before, G.b, red) }); G.red = !G.red; G.keys.push(posKey(G.b, G.red));
+    sel = -1; targets = []; hint = null;
+    sfx(capNow ? "cap" : "move"); render(m % 100); announce();
+    return;
+  }
   S.moves.push(m);
+  if (S.moves.length === 1) setupOpen = null;                      // 第一步：設定區自動收起
   const before = G.b.slice(), note = notation(G.b, m), red = G.red, cap = E.make(G.b, m);
   G.hist.push({ m, cap, note, red, sev: severity(before, G.b, red) }); G.red = !G.red;
   G.keys.push(posKey(G.b, G.red));
   sel = -1; targets = []; hint = null;
+  sfx(capNow ? "cap" : "move");
   render(m % 100); save(); announce();
   if (S.mode === "online") pushOnline({ moves: S.moves.slice() });
   else maybeAi();
@@ -1253,16 +1373,6 @@ function watch(code) {
     if (sq && sq.by === S.online.red) $("roomNote").textContent = "已送出交換紅黑的請求，等對手同意…";
     const sn = d.swapNote;
     if (sn && sn.to === S.online.red && NET.snSeen !== sn.id) { NET.snSeen = sn.id; $("roomNote").textContent = sn.text; }
-    const rb = d.rollback;                                           // 對手想退回到某一步
-    if (rb && !d.result && rb.by !== S.online.red && rb.n === (Array.isArray(d.moves) ? d.moves.length : 0) && NET.rbSeen !== rb.id) {
-      NET.rbSeen = rb.id;
-      ask(`對手想退回到第 ${rb.to} 步（刪掉後面 ${rb.n - rb.to} 步），同意嗎？`,
-          () => { const patch = {}; spendUndo(rb.by, patch); view = null; S.moves = S.moves.slice(0, rb.to); S.result = null; save(); rebuild(); pushOnline(Object.assign({ moves: S.moves.slice(), result: null, drawOffer: null, rollback: null, review: null }, patch)); },
-          () => pushOnline({ rollback: null, rollbackNote: { to: rb.by, id: rb.id, text: "對手不同意退回" } }), "同意", "不同意");
-    }
-    if (rb && rb.by === S.online.red && !d.result) $("roomNote").textContent = `等對手同意退回到第 ${rb.to} 步…`;
-    const rn = d.rollbackNote;
-    if (rn && rn.to === S.online.red && NET.rnSeen !== rn.id) { NET.rnSeen = rn.id; $("roomNote").textContent = rn.text; }
     const moves = Array.isArray(d.moves) ? d.moves.slice() : [];
     const same = moves.length === S.moves.length && moves.every((m, i) => m === S.moves[i]);
     const prevResult = JSON.stringify(S.result);
@@ -1271,11 +1381,12 @@ function watch(code) {
       const extendsOne = moves.length === S.moves.length + 1 && S.moves.every((m, i) => m === moves[i]);
       S.moves = moves; save();
       rebuild(extendsOne ? moves[moves.length - 1] % 100 : undefined);
-      if (extendsOne) announce();                                  // 對手剛走的那一步
-    } else if (prevResult !== JSON.stringify(S.result)) renderPanel();
+      if (extendsOne) { sfx(GF.hist[GF.hist.length - 1].cap !== "." ? "cap" : "move"); announce(); }   // 對手剛走的那一步
+    } else if (prevResult !== JSON.stringify(S.result)) {
+      renderPanel();
+      if (S.result && prevResult === "null") stamp(S.result.draw ? "draw" : "resign", S.result.draw ? S.result.why : winnerText(S.result));   // 對手認輸／雙方同意和棋
+    }
     else renderPanel();
-    const rvAt = d.review && d.review.at != null && d.review.at < moves.length ? d.review.at : null;   // 一起復盤：跟著對手翻到同一步
-    if (rvAt !== view) { setView(rvAt, true); if (rvAt != null && d.review.by !== S.online.red) $("roomNote").textContent = `對手翻到第 ${rvAt} 步，一起看`; }
   }, err => { NET.note = "連線中斷，重新整理頁面就會接回這盤。"; renderOnline(); });
 }
 
@@ -1354,7 +1465,6 @@ function renderOnline() {
   const gm = NET.game;
   const both = gm && gm.red && gm.black;
   $("roomWho").textContent = `你執${S.online.red ? "紅方" : "黑方"}　` + (both ? "對手已加入" : "等對手輸入房號…");
-  $("btnResign").disabled = !both || !!gameOver();
   $("btnRematch").disabled = !gm;
   const fresh = !S.moves.length || !!gameOver();
   $("btnSwap").textContent = `換我執${S.online.red ? "黑" : "紅"}`;
@@ -1385,6 +1495,7 @@ svg.addEventListener("click", evt => {
   if (p !== "." && E.isRed(p) === G.red) {
     sel = sel === i ? -1 : i;
     targets = sel < 0 ? [] : E.legal(G.b.slice(), G.red).filter(m => ((m / 100) | 0) === i);
+    if (sel >= 0) sfx("pick");
   } else { sel = -1; targets = []; }
   drawPieces();
 });
@@ -1399,9 +1510,17 @@ function ask(text, apply, no, yesLabel, noLabel) {
 $("confirmYes").onclick = () => { $("confirm").hidden = true; const f = pendingConfirm; pendingConfirm = pendingNo = null; if (f) f(); };
 $("confirmNo").onclick = () => { $("confirm").hidden = true; const f = pendingNo; pendingConfirm = pendingNo = null; if (f) f(); };
 
-/* 認輸（雙人同機、對電腦；連線用房間裡的認輸） */
+/* 認輸（雙人同機、對電腦、連線） */
 $("btnGiveUp").onclick = () => {
-  if (gameOver() || thinking || !S.moves.length) return;
+  if (gameOver() || thinking || !S.moves.length || view != null) return;
+  if (S.mode === "online") {
+    if (!(S.online && NET.game && NET.game.red && NET.game.black)) return;
+    ask("確定認輸？", () => {
+      const res = { winRed: !S.online.red, why: (S.online.red ? "紅方" : "黑方") + "認輸" };
+      S.result = res; save(); renderPanel(); stamp("resign", winnerText(res)); pushOnline({ result: res });
+    });
+    return;
+  }
   const loserRed = S.mode === "ai" ? S.humanRed : G.red;
   const who = S.mode === "ai" ? "你" : (loserRed ? "紅方" : "黑方");
   ask(`確定${who}認輸？`, () => {
@@ -1414,7 +1533,7 @@ $("btnGiveUp").onclick = () => {
 /* 求和：電腦看局勢決定；同機問對面；連線送給對手 */
 const DRAW_OK = { draw: true, kind: "draw", why: "雙方同意和棋" };
 $("btnDraw").onclick = () => {
-  if (gameOver() || thinking || !S.moves.length) return;
+  if (gameOver() || thinking || !S.moves.length || view != null) return;
   if (S.mode === "ai") {
     if (S.drawAskedAt === S.moves.length) { $("sub").textContent = "這個局面已經問過了，多走幾步再提和。"; return; }
     S.drawAskedAt = S.moves.length;
@@ -1455,7 +1574,7 @@ function switchMode(mode) {
 }
 document.querySelectorAll("#modeSeg button").forEach(b => b.onclick = () => switchMode(b.dataset.mode));
 
-function newLocal() { token++; thinking = false; S.moves = []; S.result = null; S.undos = { r: 0, k: 0 }; view = null; lastTag = null; if (S.mode === "ai") pickStyle(); save(); rebuild(); maybeAi(); }
+function newLocal() { token++; thinking = false; S.moves = []; S.result = null; S.undos = { r: 0, k: 0 }; view = null; sandbox = null; setupOpen = null; lastTag = null; if (S.mode === "ai") pickStyle(); save(); rebuild(); maybeAi(); }
 $("btnNew").onclick = () => { if (inProgress()) ask("放棄這盤、重新開始？", newLocal); else newLocal(); };
 document.querySelectorAll("#sideSeg button").forEach(b => b.onclick = () => {
   const red = b.dataset.red === "1"; if (red === S.humanRed) return;
@@ -1476,6 +1595,7 @@ document.querySelectorAll("#styleSeg button").forEach(b => b.onclick = () => {
 });
 
 $("btnUndo").onclick = () => {
+  if (sandbox) return sandboxUndo();
   const k = undoCount(); if (!k || thinking) return;
   token++;
   const side = undoSide(), patch = { moves: null };
@@ -1484,39 +1604,26 @@ $("btnUndo").onclick = () => {
   S.moves.splice(S.moves.length - k, k); save(); rebuild();
   if (S.mode === "online") { patch.moves = S.moves.slice(); pushOnline(patch); }
 };
-/* 復盤列 */
-$("rvFirst").onclick = () => setView(0);
-$("rvPrev").onclick = () => setView((view == null ? S.moves.length : view) - 1);
-$("rvNext").onclick = () => setView((view == null ? S.moves.length : view) + 1);
-$("rvLast").onclick = () => setView(null);
-$("rvLive").onclick = () => setView(null);
-$("moves").addEventListener("click", e => { const td = e.target.closest("td[data-k]"); if (td) setView(Number(td.dataset.k)); });
+/* 復盤（下完才有）與沙盤推演 */
+$("rvFirst").onclick = () => { if (canReview()) setView(0); };
+$("rvPrev").onclick = () => { if (canReview()) setView((view == null ? S.moves.length : view) - 1); };
+$("rvNext").onclick = () => { if (canReview()) setView((view == null ? S.moves.length : view) + 1); };
+$("rvLast").onclick = () => { if (canReview()) setView(S.moves.length); };
+$("rvExit").onclick = () => setView(null);
+$("endReview").onclick = () => { if (canReview()) setView(S.moves.length); };
+$("endSandbox").onclick = $("rvSandbox").onclick = enterSandbox;
+$("sbExit").onclick = exitSandbox;
+$("endAgain").onclick = () => { if (S.mode === "online") $("btnRematch").click(); else newLocal(); };
+$("moves").addEventListener("click", e => { const b = e.target.closest("b[data-k]"); if (b && canReview()) setView(Number(b.dataset.k)); });
+$("setup").addEventListener("toggle", () => { setupOpen = $("setup").open; });
 addEventListener("keydown", e => {
   if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+  if (!canReview() || sandbox) return;
   if (e.key === "ArrowLeft") { e.preventDefault(); $("rvPrev").click(); }
   else if (e.key === "ArrowRight") { e.preventDefault(); $("rvNext").click(); }
   else if (e.key === "Home") { e.preventDefault(); setView(0); }
-  else if (e.key === "End") { e.preventDefault(); setView(null); }
+  else if (e.key === "End") { e.preventDefault(); setView(S.moves.length); }
 });
-/* 退回到某一步：雙人同機／對電腦直接退；連線要對手同意 */
-function rollbackTo(k, extra) {
-  token++; thinking = false;
-  S.moves.splice(k); S.result = null; view = null; save(); rebuild();
-  if (S.mode === "online") pushOnline(Object.assign({ moves: S.moves.slice(), result: null, drawOffer: null, rollback: null, review: null }, extra || {}));
-  else maybeAi();
-}
-$("rvRollback").onclick = () => {
-  if (view == null) return;
-  const k = view, drop = S.moves.length - k, side = undoSide();
-  if (undoLeft(side) <= 0) return;
-  if (S.mode !== "online") {
-    ask(`退回到第 ${k} 步？後面 ${drop} 步會刪掉。`, () => { spendUndo(side, {}); rollbackTo(k); });
-    return;
-  }
-  const gm = NET.game; if (!gm || !gm.red || !gm.black) return;
-  pushOnline({ rollback: { to: k, by: S.online.red, n: S.moves.length, id: Date.now() }, rollbackNote: null });
-  $("roomNote").textContent = `已送出：退回到第 ${k} 步，等對手同意…`;
-};
 document.querySelectorAll("#undoSeg button").forEach(b => b.onclick = () => {
   const v = Number(b.dataset.u);
   if (S.mode === "online") { if (!S.online || !NET.game || (S.moves.length && !gameOver())) return; pushOnline({ undoLimit: v, undos: { red: 0, black: 0 } }); }
@@ -1537,17 +1644,13 @@ $("btnCreate").onclick = createRoom;
 $("btnJoin").onclick = joinRoom;
 $("joinCode").addEventListener("keydown", e => { if (e.key === "Enter") joinRoom(); });
 $("btnLeave").onclick = () => ask(NET.p2p ? "離開這個房間？對手還在的話房間會留給他，沒人的話房間就關閉。" : "離開這個房間？之後輸入同一個房號還能回來。", leaveRoom);
-$("btnResign").onclick = () => ask("確定認輸？", () => {
-  const res = { winRed: !S.online.red, why: (S.online.red ? "紅方" : "黑方") + "認輸" };
-  S.result = res; save(); renderPanel(); pushOnline({ result: res });
-});
 $("btnRematch").onclick = () => {
-  const go = () => { S.moves = []; S.result = null; view = null; save(); rebuild(); pushOnline({ moves: [], result: null, drawOffer: null, rollback: null, review: null, undos: { red: 0, black: 0 } }); };
+  const go = () => { S.moves = []; S.result = null; view = null; sandbox = null; setupOpen = null; save(); rebuild(); pushOnline({ moves: [], result: null, drawOffer: null, rollback: null, review: null, undos: { red: 0, black: 0 } }); };
   if (inProgress()) ask("這盤還沒下完，確定重新開始？（對手的畫面也會清空）", go); else go();
 };
 function doSwap() {                                                  // 紅黑對調並清空棋盤（雙方都會收到）
   const gm = NET.game; if (!gm) return;
-  S.moves = []; S.result = null; view = null; save(); rebuild();
+  S.moves = []; S.result = null; view = null; sandbox = null; setupOpen = null; save(); rebuild();
   pushOnline({ red: gm.black || null, black: gm.red || null, moves: [], result: null, drawOffer: null, rollback: null, review: null, swapReq: null, undos: { red: 0, black: 0 } });
 }
 $("btnSwap").onclick = () => {                                      // 還沒開始或下完一盤時才能換；對手在的話要他同意（Gabi 2026-10-17）
@@ -1564,6 +1667,50 @@ $("btnCopy").onclick = async () => {
   try { await navigator.clipboard.writeText(txt); $("roomNote").textContent = NET.p2p ? "邀請連結已複製，貼給對手就好。" : "已複製房號。"; }
   catch (e) { const r = document.createRange(); r.selectNodeContents($("roomCode")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); $("roomNote").textContent = "已選取房號，請手動複製。"; }
 };
+
+/* ───────── 音效（2026-10-29）：全部用 WebAudio 合成，不用音檔；🔊 鈕可以關 ───────── */
+let AC = null;
+function ac() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; } }
+  if (AC && AC.state === "suspended") AC.resume().catch(() => { });
+  return AC;
+}
+function tone(f, t0, dur, type, gain) {
+  const a = AC, o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t0);
+  g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(gain, t0 + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(a.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+}
+function thud(t0, dur, gain, freq) {                                // 木頭敲擊：短的噪音 ＋ 低頻衰減
+  const a = AC, n = Math.floor(a.sampleRate * dur), buf = a.createBuffer(1, n, a.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = buf; bp.type = "bandpass"; bp.frequency.value = freq; bp.Q.value = 0.8; g.gain.value = gain;
+  src.connect(bp); bp.connect(g); g.connect(a.destination); src.start(t0);
+  const o = a.createOscillator(), og = a.createGain();
+  o.type = "sine"; o.frequency.setValueAtTime(freq / 5, t0); o.frequency.exponentialRampToValueAtTime(freq / 9, t0 + dur);
+  og.gain.setValueAtTime(gain * 0.9, t0); og.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(og); og.connect(a.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+}
+function sfx(kind) {
+  if (S && S.sound === false) return;
+  const a = ac(); if (!a) return;
+  const t = a.currentTime + 0.01;
+  try {
+    switch (kind) {
+      case "pick": tone(1046, t, 0.05, "sine", 0.06); break;
+      case "move": thud(t, 0.09, 0.9, 1400); break;
+      case "cap": thud(t, 0.12, 1.1, 900); thud(t + 0.06, 0.08, 0.6, 1600); break;
+      case "check": tone(740, t + 0.12, 0.09, "square", 0.08); tone(988, t + 0.24, 0.16, "square", 0.08); break;
+      case "warn": tone(260, t, 0.18, "sawtooth", 0.07); break;
+      case "win": [523, 659, 784, 1047].forEach((f, i) => tone(f, t + 0.15 + i * 0.13, i === 3 ? 0.5 : 0.22, "triangle", 0.16)); break;
+      case "lose": [392, 330, 262].forEach((f, i) => tone(f, t + 0.15 + i * 0.2, i === 2 ? 0.5 : 0.26, "triangle", 0.14)); break;
+      case "draw": tone(440, t + 0.1, 0.25, "triangle", 0.12); tone(440, t + 0.4, 0.35, "triangle", 0.12); break;
+    }
+  } catch (e) { }
+}
+addEventListener("pointerdown", () => ac(), { once: true, passive: true });   // 第一次碰畫面就把音訊打開（iOS 要在手勢裡）
+$("btnSound").onclick = () => { S.sound = S.sound === false; save(); renderPanel(); if (S.sound) sfx("pick"); };
 
 /* ───────── 啟動 ───────── */
 function start(data) {
