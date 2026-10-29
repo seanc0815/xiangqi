@@ -223,6 +223,15 @@
         <button data-lv="4" aria-pressed="false">高級</button>
         <button data-lv="5" aria-pressed="false">進階</button>
       </div>
+      <span class="label" style="margin-top:6px">電腦棋風</span>
+      <div class="seg" id="styleSeg">
+        <button data-style="random" aria-pressed="true">隨機</button>
+        <button data-style="attack" aria-pressed="false">搶攻</button>
+        <button data-style="sac" aria-pressed="false">棄子</button>
+        <button data-style="solid" aria-pressed="false">穩健</button>
+        <button data-style="plain" aria-pressed="false">純算</button>
+      </div>
+      <span class="note">隨機：每盤從搶攻、棄子、穩健抽一種。除了純算，電腦都會設局（故意送子引你吃）、也會起疑（你送子時多想幾步再吃）。</span>
     </div>
 
     <div class="actions">
@@ -272,6 +281,7 @@
         <li><b>困斃</b>：輪到你但沒有任何合法步（就算沒被將軍），也算輸。</li>
         <li><b>長將、長捉</b>：同一個局面要第三次出現時，一直將軍（長將）或一直追著要吃同一顆子（長捉）的一方必須變招，不能再走那一步；雙方都只是閒著走就判和（不變作和）。</li>
         <li><b>和棋</b>：連續 60 回合沒有吃子；雙方都沒有能過河進攻的子；也可以提出求和、或認輸。</li>
+        <li><b>電腦棋風</b>：搶攻型把子力往你的九宮壓；棄子型願意用子換攻勢；穩健型先顧好自己的帥。三種都會設局（故意送子，你吃了反而虧）和起疑（你送子時多算幾步再決定吃不吃）。「純算」就是沒有棋風、只算分數的原本電腦。</li>
       </ul>
     </details>
   </aside>
@@ -400,13 +410,49 @@ function ENGINE() {
   }
   /* PH：開局程度（盤面上車馬炮 12 顆＝1，越少越接近 0）。2026-10-13：開局炮約 4.9 兵、馬 4 兵（不輕易炮換馬）；殘局馬 4.3、炮 4.2 */
   let PH = 1;
+  /* 棋風（2026-10-29）：只對「電腦自己那一方」不對稱加權，所以同一個局面不同棋風會走出不同的棋。
+     ST = null 純算（原本的評分）。ST.me：電腦是紅方？
+     mat：自己子力的倍率（<1＝比較捨得棄子）；atk：自己車馬炮逼近對方帥的獎勵倍率；
+     def：自己仕相和守在家裡的子的獎勵；fear：對方子力逼近自己帥的扣分倍率。 */
+  let ST = null;
+  const STYLES = {
+    attack: { mat: 1.0, atk: 2.2, def: 0.4, fear: 0.6 },   // 搶攻：子力往對方九宮壓，不太在乎自家防守
+    sac: { mat: 0.86, atk: 1.8, def: 0.3, fear: 0.5 },     // 棄子：子力打 86 折，所以願意用子換攻勢
+    solid: { mat: 1.0, atk: 0.6, def: 1.4, fear: 1.6 },    // 穩健：先顧好自己的帥，對方逼近就很緊張
+  };
+  function nearKing(i, t, kr, kc) {              // 車馬炮離對方帥多近：0～6
+    const r = (i / 9) | 0, c = i % 9;
+    const d = Math.abs(r - kr) + Math.abs(c - kc);
+    return Math.max(0, 6 - d) * (t === "r" ? 1.3 : 1);
+  }
   function evaluate(b, red) {
     let s = 0, majors = 0;
     for (let i = 0; i < 90; i++) { const t = b[i]; if (t === "R" || t === "r" || t === "N" || t === "n" || t === "C" || t === "c") majors++; }
     PH = Math.min(1, majors / 12);
+    if (!ST) {
+      for (let i = 0; i < 90; i++) {
+        const p = b[i]; if (p === ".") continue;
+        const pr = isRed(p), v = pval(p.toLowerCase(), (i / 9) | 0, i % 9, pr);
+        s += pr ? v : -v;
+      }
+      return red ? s : -s;
+    }
+    const me = ST.me, w = ST.w, kR = kingPos(b, true), kB = kingPos(b, false);
+    const mk = me ? kR : kB, ek = me ? kB : kR;                       // 自己的帥、對方的帥
+    const mkr = (mk / 9) | 0, mkc = mk % 9, ekr = (ek / 9) | 0, ekc = ek % 9;
     for (let i = 0; i < 90; i++) {
       const p = b[i]; if (p === ".") continue;
-      const pr = isRed(p), v = pval(p.toLowerCase(), (i / 9) | 0, i % 9, pr);
+      const pr = isRed(p), t = p.toLowerCase(), r = (i / 9) | 0;
+      let v = pval(t, r, i % 9, pr);
+      if (pr === me) {                                                 // 電腦自己的子
+        v *= w.mat;
+        if (t === "r" || t === "n" || t === "c") {
+          v += nearKing(i, t, ekr, ekc) * 14 * w.atk;
+          if (w.def > 1 && (me ? r >= 5 : r <= 4)) v += 12 * w.def;   // 穩健：子留在家裡也有分
+        } else if (t === "a" || t === "b") v += 45 * w.def;
+      } else if (t === "r" || t === "n" || t === "c") {                // 對方的子逼近我的帥
+        v += nearKing(i, t, mkr, mkc) * 14 * w.fear;
+      }
       s += pr ? v : -v;
     }
     return red ? s : -s;
@@ -416,8 +462,9 @@ function ENGINE() {
     return ms.map(m => [sc(m), m]).sort((x, y) => y[0] - x[0]).map(x => x[1]);
   }
 
-  function search(board, red, maxDepth, timeMs, noise, banned, seen) {
+  function search(board, red, maxDepth, timeMs, noise, banned, seen, style) {
     const b = board.slice(), t0 = Date.now(), seenSet = seen && seen.length ? new Set(seen) : null;
+    ST = style && STYLES[style] ? { me: red, w: STYLES[style] } : null;
     let nodes = 0, stop = false;
     function quiesce(alpha, beta, side, qd) {
       nodes++;
@@ -454,7 +501,7 @@ function ENGINE() {
       return any ? best : -MATE + ply;            // 沒棋可走（被將死或困斃）就是輸
     }
     const all = legal(b, red), allowed = banned && banned.length ? all.filter(m => !banned.includes(m)) : all;   // 長將禁著不列入
-    let root = order(b, allowed.length ? allowed : all), bestMove = root[0], bestScore = 0, done = 0;
+    let root = order(b, allowed.length ? allowed : all), bestMove = root[0], bestScore = 0, done = 0, list = [];
     for (let d = 1; d <= maxDepth && !stop; d++) {
       //  2026-10-22 修正：原本把隨機分數加進 alpha 再拿去剪枝，被剪掉的爛棋（例如送車）只回傳上限值，
       //  加上隨機後可能被選中。改成：剪枝用「真實最佳分數 − noise」，比最佳差超過 noise 的棋，加完隨機也贏不過最佳。
@@ -474,13 +521,70 @@ function ENGINE() {
         if (s > curScore) { curScore = s; cur = m; }
       }
       if (stop && d > 1) break;
-      if (cur !== null) { bestMove = cur; bestScore = curScore; done = d; }
+      if (cur !== null) { bestMove = cur; bestScore = curScore; done = d; list = scored.slice().sort((x, y) => y[0] - x[0]); }
       root = scored.sort((x, y) => y[0] - x[0]).map(x => x[1]).concat(root.filter(m => !scored.some(x => x[1] === m)));
     }
-    return { move: bestMove, score: bestScore, depth: done, nodes, ms: Date.now() - t0 };
+    ST = null;
+    return { move: bestMove, score: bestScore, depth: done, nodes, ms: Date.now() - t0, list };
   }
 
-  return { START, parse, isRed, gen, legal, inCheck, make, unmake, search, attacked, VAL };
+  /* ───── 像人一點（2026-10-29）：設局、起疑 ─────
+     choose() 包在 search() 外面：先正常搜尋，再做兩件事。
+     起疑：選中的是吃子，就多算兩層專門看「吃完會不會被反擊」；分數掉太多就改走第二好的（對方送子時想清楚再吃）。
+     設局：在「跟最佳只差一點」的候選裡，找一步「對方吃了之後我反而大賺」的誘餌；對方不吃也沒損失（根節點分數已經假設對方不上當）。
+     style 決定設局的容忍度（棄子型最愛設局）。 */
+  function choose(board, red, maxDepth, timeMs, noise, banned, seen, style, human) {
+    const t0 = Date.now();
+    const r = search(board, red, maxDepth, human ? timeMs * 0.7 : timeMs, noise, banned, seen, style);   // 對人時留 3 成時間給設局、起疑
+    r.tag = null;
+    if (!human || maxDepth < 3 || !r.list || r.list.length < 2) return r;
+    const b = board.slice(), budget = timeMs * 0.6;
+    const isCap = m => b[m % 100] !== ".";
+    // ── 起疑 ──
+    const verify = m => {                                        // 走完 m 之後站在對方立場多算兩層，回傳我方分數
+      const bb = b.slice(); make(bb, m);
+      const q = search(bb, !red, Math.min(maxDepth + 2, 8), Math.max(300, budget * 0.5), 0, [], [], style);
+      return -q.score;
+    };
+    let move = r.move, score = r.score;
+    if (isCap(move) && VAL[b[move % 100].toLowerCase()] >= 100) {
+      const deep = verify(move);
+      if (deep < score - 180) {                                  // 吃下去會虧：看第二好的
+        const alt = r.list.find(x => x[1] !== move && !(banned || []).includes(x[1]));
+        if (alt) {
+          const altDeep = verify(alt[1]);                        // 第二好的也用同樣深度驗，才公平
+          if (altDeep > deep + 60) { move = alt[1]; score = altDeep; r.tag = "suspect"; }
+        }
+      }
+    }
+    // ── 設局 ──
+    if (Date.now() - t0 < timeMs * 0.8 && Math.abs(score) < MATE - 1000) {
+      const tol = { attack: 80, sac: 130, solid: 45 }[style] || 70;
+      const cands = r.list.filter(x => x[1] !== move && x[0] >= score - tol && !(banned || []).includes(x[1])).slice(0, 5);
+      let best = null;
+      for (const [sc, m] of cands) {
+        if (Date.now() - t0 > timeMs * 1.1) break;
+        const bb = b.slice(); make(bb, m);
+        if (attacked(bb, kingPos(bb, red), !red)) continue;
+        // 對方能吃我什麼，每個吃法算一次我的反擊
+        for (const c of order(bb, gen(bb, !red, true))) {
+          const victim = bb[c % 100].toLowerCase(); if (victim === "k" || VAL[victim] < 100) continue;
+          const cap = make(bb, c);
+          const ok = !attacked(bb, kingPos(bb, !red), red);
+          let gain = -Infinity;
+          if (ok) { const q = search(bb, red, Math.max(2, maxDepth - 1), Math.max(150, budget * 0.25), 0, [], [], style); gain = q.score; }
+          unmake(bb, c, cap);
+          if (ok && gain >= score + 220 && (!best || gain > best.gain)) best = { m, gain, sc };
+          if (Date.now() - t0 > timeMs * 1.1) break;
+        }
+      }
+      if (best) { move = best.m; score = best.sc; r.tag = "trap"; r.bait = best.gain; }
+    }
+    r.move = move; r.score = score; r.ms = Date.now() - t0;
+    return r;
+  }
+
+  return { START, parse, isRed, gen, legal, inCheck, make, unmake, search, choose, attacked, VAL, STYLES };
 }
 
 /* ───────────────────────── 畫面 ───────────────────────── */
@@ -513,7 +617,7 @@ let view = null;        // 復盤：正在看第幾步（null = 現在）
 let NET = { db: null, me: null, unsub: null, game: null, note: "" };   // 連線狀態（不存檔）
 
 function defaults() {
-  return { mode: "local", moves: [], flipped: false, humanRed: true, level: 2, lvV: 2, seatRed: true, online: null, result: null, face: true, undoLimit: 3, undos: { r: 0, k: 0 } };
+  return { mode: "local", moves: [], flipped: false, humanRed: true, level: 2, lvV: 2, style: "random", styleNow: null, seatRed: true, online: null, result: null, face: true, undoLimit: 3, undos: { r: 0, k: 0 } };
 }
 /* 對坐：只在雙人同機時，畫面上方那一方的字轉 180 度 */
 const faceOn = () => S.mode === "local" && S.face !== false;
@@ -751,7 +855,7 @@ function renderPanel() {
     if (!S.online) { msg = "連線對戰"; sub = "開新房間，或輸入對手給你的房號"; }
     else if (!NET.game || !NET.game.red || !NET.game.black) { msg = "等對手加入"; sub = `把房號 ${S.online.code} 傳給對手`; }
     else { msg = G.red === S.online.red ? `輪到你（${side}）` : `等對手走（${side}）`; sub = lastText(check); }
-  } else if (S.mode === "ai") { msg = G.red === S.humanRed ? `輪到你（${side}）` : `電腦（${side}）`; sub = lastText(check); }
+  } else if (S.mode === "ai") { const st = S.style !== "plain" && S.styleNow ? `・${STYLE_NAMES[S.styleNow]}` : ""; msg = G.red === S.humanRed ? `輪到你（${side}）${st ? "・電腦" + st.slice(1) : ""}` : `電腦（${side}）${st}`; sub = lastText(check); }
   else { msg = `${side}走棋`; sub = lastText(check); }
   $("msg").textContent = msg; $("sub").textContent = sub;
 
@@ -797,6 +901,7 @@ function renderPanel() {
   document.querySelectorAll("#sideSeg button").forEach(b => b.setAttribute("aria-pressed", (b.dataset.red === "1") === S.humanRed));
   document.querySelectorAll("#seatSeg button").forEach(b => b.setAttribute("aria-pressed", (b.dataset.red === "1") === S.seatRed));
   document.querySelectorAll("#lvlSeg button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.lv) === S.level));
+  document.querySelectorAll("#styleSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.style === (S.style || "random")));
   const online = S.mode === "online";
   $("btnNew").hidden = online;
   $("btnUndo").disabled = thinking || view != null || !undoCount();
@@ -1009,7 +1114,7 @@ function play(m) {
 /* ───────── 電腦（背景執行緒） ───────── */
 let worker = null;
 try {
-  const src = `const E=(${ENGINE.toString()})();onmessage=e=>{const d=e.data;postMessage({id:d.id,r:E.search(d.board,d.red,d.depth,d.time,d.noise,d.banned,d.seen)});};`;
+  const src = `const E=(${ENGINE.toString()})();onmessage=e=>{const d=e.data;postMessage({id:d.id,r:E.choose(d.board,d.red,d.depth,d.time,d.noise,d.banned,d.seen,d.style,d.human)});};`;
   worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
 } catch (e) { worker = null; }
 const waiting = new Map();
@@ -1017,12 +1122,20 @@ if (worker) {
   worker.onmessage = e => { const cb = waiting.get(e.data.id); waiting.delete(e.data.id); if (cb) cb(e.data.r); };
   worker.onerror = () => { worker = null; };
 }
-let reqId = 0;
-function think(board, red, lv, cb) {
+let reqId = 0, lastTag = null;   // lastTag：電腦上一步是設局或起疑（除錯用）
+function think(board, red, lv, cb, human) {
   const L = LEVELS[lv], id = ++reqId, banned = red === G.red ? bannedMoves() : [];   // 電腦也不走長將、長捉
   const seen = red === G.red ? G.keys.slice() : [];                                 // 出現過的局面：搜尋時避開重複將軍
-  if (worker) { waiting.set(id, cb); worker.postMessage({ id, board, red, depth: L.depth, time: L.time, noise: L.noise, banned, seen }); }
-  else setTimeout(() => cb(E.search(board, red, Math.min(L.depth, 3), L.time, L.noise, banned, seen)), 30);
+  const live = !!human && S.style !== "plain";                                      // 純算：沒有棋風、不設局、不起疑（原本的電腦）
+  const style = live ? (S.styleNow || "attack") : null;
+  if (worker) { waiting.set(id, cb); worker.postMessage({ id, board, red, depth: L.depth, time: L.time, noise: L.noise, banned, seen, style, human: live }); }
+  else setTimeout(() => cb(E.choose(board, red, Math.min(L.depth, 3), L.time, L.noise, banned, seen, style, live)), 30);
+}
+const STYLE_NAMES = { attack: "搶攻型", sac: "棄子型", solid: "穩健型", plain: "純算" };
+function pickStyle() {                       // 新局時決定這盤的棋風（「隨機」就三種抽一個）
+  if (S.style === "plain") { S.styleNow = null; return; }
+  if (S.style === "random" || !S.style) { const ks = ["attack", "sac", "solid"]; S.styleNow = ks[(Math.random() * 3) | 0]; }
+  else S.styleNow = S.style;
 }
 /* 開局譜（2026-10-13）：前幾步從常見開局裡隨機挑，下法比較像真人；不在譜上就照常思考 */
 const BOOK = {
@@ -1072,9 +1185,9 @@ function maybeAi() {
     setTimeout(() => {
       if (my !== token) return;
       thinking = false;
-      if (r && r.move != null) play(r.move); else renderPanel();
+      if (r && r.move != null) { play(r.move); if (r.tag) lastTag = { n: S.moves.length, tag: r.tag }; } else renderPanel();
     }, Math.max(0, 450 - (Date.now() - t0)));
-  });
+  }, true);
 }
 
 /* ───────── 連線對戰（共用資料庫：games/<房號>） ───────── */
@@ -1342,7 +1455,7 @@ function switchMode(mode) {
 }
 document.querySelectorAll("#modeSeg button").forEach(b => b.onclick = () => switchMode(b.dataset.mode));
 
-function newLocal() { token++; thinking = false; S.moves = []; S.result = null; S.undos = { r: 0, k: 0 }; view = null; save(); rebuild(); maybeAi(); }
+function newLocal() { token++; thinking = false; S.moves = []; S.result = null; S.undos = { r: 0, k: 0 }; view = null; lastTag = null; if (S.mode === "ai") pickStyle(); save(); rebuild(); maybeAi(); }
 $("btnNew").onclick = () => { if (inProgress()) ask("放棄這盤、重新開始？", newLocal); else newLocal(); };
 document.querySelectorAll("#sideSeg button").forEach(b => b.onclick = () => {
   const red = b.dataset.red === "1"; if (red === S.humanRed) return;
@@ -1354,6 +1467,13 @@ document.querySelectorAll("#faceSeg button").forEach(b => b.onclick = () => {
 });
 document.querySelectorAll("#seatSeg button").forEach(b => b.onclick = () => { S.seatRed = b.dataset.red === "1"; save(); renderPanel(); });
 document.querySelectorAll("#lvlSeg button").forEach(b => b.onclick = () => { S.level = Number(b.dataset.lv); save(); renderPanel(); });
+document.querySelectorAll("#styleSeg button").forEach(b => b.onclick = () => {
+  S.style = b.dataset.style;
+  if (S.style === "plain") S.styleNow = null;
+  else if (S.style !== "random") S.styleNow = S.style;
+  else if (!S.styleNow) pickStyle();                   // 隨機：這盤已經抽過就沿用，下一盤再抽
+  save(); renderPanel();
+});
 
 $("btnUndo").onclick = () => {
   const k = undoCount(); if (!k || thinking) return;
@@ -1453,6 +1573,8 @@ function start(data) {
   if (!st) { try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { st = null; } }
   S = Object.assign(defaults(), st || {});
   if (st && st.lvV !== 2) { S.level = [0, 2, 5][st.level] ?? 2; S.lvV = 2; }     // 舊存檔（3 級）換成 6 級的編號
+  if (!S.style) S.style = "random";
+  if (S.mode === "ai" && S.style !== "plain" && !S.styleNow) pickStyle();
   if (!data) { try { S.online = JSON.parse(sessionStorage.getItem(STORE + "-room") || "null") || S.online || null; } catch (e) { } }
   if (S.mode === "online" && !S.online) { S.moves = []; S.result = null; S.flipped = false; }     // 新分頁：回到大廳
   if (!Array.isArray(S.moves)) S.moves = [];

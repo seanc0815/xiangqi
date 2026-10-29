@@ -1,5 +1,5 @@
 // 離線快取（build_pages.py 產生，不要手改）
-const V = "xiangqi-a50621dc68";
+const V = "xiangqi-1fa92448a4";
 const CORE = ["./", "index.html", "manifest.json", "icon.png", "xiangqi.html", "go.html", "darkchess.html", "gomoku.html", "chess.html", "othello.html", "checkers.html", "ooxx.html", "connect4.html", "quoridor.html", "net.js"];
 const FONT = /^https:\/\/fonts\.(googleapis|gstatic)\.com\//;
 self.addEventListener("install", e => {
