@@ -1924,7 +1924,7 @@ function pikaHint() {
       if (my !== token || !r.pick) throw 0;
       const m = ofUci(r.pick); if (!E.legal(G.b.slice(), G.red).includes(m)) throw 0;
       hint = m; drawPieces(); renderPanel();
-      $("sub").textContent = "建議：" + notation(G.b, m);
+      $("sub").textContent = "建議：" + notation(G.b, m) + "。";   // 句號＝Pikafish（只有自己知道）
     }).catch(() => { if (my === token) jsHint(my); });
 }
 function jsHint(my) {
