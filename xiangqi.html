@@ -1164,6 +1164,7 @@ function stamp(kind, sub, bigText) {
   if (kind === "check" || kind === "warn") setTimeout(() => d.remove(), 1700);
   else { svg.classList.remove("shake"); void svg.getBoundingClientRect(); svg.classList.add("shake"); }
   if (kind === "mate" && voiceMate(bigText)) return;
+  if (kind === "check" && voicePlay("sfx/check.mp3")) return;           // 將軍：喊「將軍！」（語音關掉才用原本的音效）
   sfx(stampSound(kind));
 }
 function stampSound(kind) {
@@ -2030,7 +2031,7 @@ addEventListener("pointerdown", () => { ac(); voiceUnlock(); }, { once: true, pa
 $("btnSound").onclick = () => { S.sound = S.sound === false; save(); renderPanel(); if (S.sound) sfx("move"); };
 $("btnVoice").onclick = () => { S.voice = S.voice === false; save(); renderPanel(); if (S.voice) { voiceUnlock(); voiceMate(null); } };
 
-/* ───────── 絕殺語音（2026-10-29，Gabi：只要絕殺、要中氣十足）：預錄的 mp3（sfx/mate_殺法.mp3；認不出殺法就 sfx/mate.mp3） ─────────
+/* ───────── 絕殺＋將軍語音（2026-10-29 絕殺；10-30 將軍也喊、語速調快 rate +4%）：預錄的 mp3（sfx/mate_殺法.mp3；認不出殺法就 sfx/mate.mp3） ─────────
    由 tools 以 edge-tts 的 zh-CN-YunjianNeural（運動播報男聲）產生；iOS 要在第一次手勢裡先播過一次才准自動出聲 */
 const VOICE_NAMES = ["拔簧馬", "重炮", "馬後炮", "天地炮", "悶宮", "夾車炮", "鐵門栓", "大膽穿心", "對面笑", "雙車錯", "二鬼拍門", "雙馬飲泉", "臥槽馬", "掛角馬", "釣魚馬", "高釣馬", "海底撈月", "空頭炮", "悶殺", "老兵搜山", "雙炮", "單車殺", "雙車殺", "單馬殺", "雙馬殺", "單炮殺", "單兵殺", "雙兵殺", "車馬殺", "車炮殺", "馬炮殺", "車兵殺", "馬兵殺", "炮兵殺", "車馬炮殺"];
 let voiceEl = null;
@@ -2041,12 +2042,13 @@ function voiceUnlock() {
     const p = voiceEl.play(); if (p && p.then) p.then(() => { voiceEl.pause(); voiceEl.currentTime = 0; voiceEl.muted = false; }).catch(() => { voiceEl.muted = false; });
   } catch (e) { voiceEl = null; }
 }
-function voiceMate(name) {
+function voiceMate(name) { return voicePlay(name && VOICE_NAMES.includes(name) ? `sfx/mate_${name}.mp3` : "sfx/mate.mp3"); }
+function voicePlay(src) {
   if (S && S.voice === false) return false;
   try {
     if (!voiceEl) voiceEl = new Audio();
     voiceEl.muted = false;
-    voiceEl.src = name && VOICE_NAMES.includes(name) ? `sfx/mate_${name}.mp3` : "sfx/mate.mp3";
+    voiceEl.src = src;
     voiceEl.volume = 1; const p = voiceEl.play(); if (p && p.catch) p.catch(() => { });
     return true;
   } catch (e) { return false; }
