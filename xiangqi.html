@@ -146,6 +146,13 @@
   .pair b.sb { color: var(--jade); font-style: italic; }
   .pair b.last { text-decoration: underline; text-decoration-color: var(--jade); text-underline-offset: 4px; }
   .pair b.cur { background: rgba(120, 200, 160, .22); outline: 1px solid var(--jade); }
+  .pair b sup { font-size: 11px; margin-left: 1px; font-family: var(--f-body); }
+  .q1 { color: #b08a2e; } .q2 { color: #c8642a; } .q3 { color: #d0352b; font-weight: 900; }
+  .ana { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; font-size: 14px; }
+  .ana .bar { height: 6px; border-radius: 3px; background: var(--rule); overflow: hidden; } .ana .bar i { display: block; height: 100%; background: var(--jade); width: 0; }
+  .ana .row2 { display: flex; gap: 10px; flex-wrap: wrap; } .ana .row2 > div { flex: 1; min-width: 140px; }
+  .ana ul { margin: 0; padding-left: 1.1em; } .ana li { margin: 2px 0; }
+  .ana li[data-k] { cursor: pointer; }
   .moves.canpick b[data-k] { cursor: pointer; } .moves.canpick b[data-k]:hover { background: rgba(120, 200, 160, .12); }
   @media (max-width: 900px) { .moves { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; max-height: none; padding-bottom: 6px; } }
   .empty { color: var(--muted); font-size: 13px; }
@@ -191,8 +198,10 @@
       <button class="btn" id="rvNext" title="下一步">▶</button>
       <button class="btn" id="rvLast" title="最後一步">⏭</button>
       <button class="btn" id="rvSandbox">沙盤推演</button>
+      <button class="btn" id="rvAna">引擎分析</button>
       <button class="btn" id="rvExit">結束復盤</button>
     </div>
+    <div class="ana" id="anaBox" hidden></div>
     <div class="row rv" id="sandboxBar" hidden>
       <span class="note">沙盤推演：兩邊的棋子都可以動，不會記進棋譜</span>
       <button class="btn primary" id="sbExit">回到復盤</button>
@@ -656,7 +665,7 @@ let setupOpen = null;   // 設定區展開？null = 自動（還沒開始就展�
 let NET = { db: null, me: null, unsub: null, game: null, note: "" };   // 連線狀態（不存檔）
 
 function defaults() {
-  return { mode: "local", moves: [], flipped: false, humanRed: true, level: 2, lvV: 2, style: "random", styleNow: null, seatRed: true, online: null, result: null, face: true, undoLimit: 3, undos: { r: 0, k: 0 }, sound: true, voice: true };
+  return { mode: "local", moves: [], flipped: false, humanRed: true, level: 2, lvV: 2, style: "random", styleNow: null, seatRed: true, online: null, result: null, face: true, undoLimit: 3, undos: { r: 0, k: 0 }, sound: true, voice: true, undoLog: [] };
 }
 /* 對坐：只在雙人同機時，畫面上方那一方的字轉 180 度 */
 const faceOn = () => S.mode === "local" && S.face !== false;
@@ -912,8 +921,9 @@ function renderPanel() {
     else { msg = `沙盤推演・${side}走`; sub = (k ? `從第 ${sandbox.base} 步起走了 ${k} 步` : `從第 ${sandbox.base} 步的局面開始`) + (check ? "，被將軍了" : "") + "。想退就按「退一步」"; }
   } else if (reviewing) {
     msg = `復盤：第 ${view} 步／共 ${n} 步`;
-    sub = view === 0 ? "開局。按 ▶ 往後看" : `${GF.hist[view - 1].red ? "紅" : "黑"}：${GF.hist[view - 1].note}。點棋譜或 ◀ ▶ 看每一步，想試別的走法按「沙盤推演」`;
-  } else if (over && over.draw) { msg = "和棋"; sub = over.why; }
+    sub = view === 0 ? "開局。按 ▶ 往後看" : `${GF.hist[view - 1].red ? "紅" : "黑"}：${GF.hist[view - 1].note}。` + (anaComment(view - 1) || "點棋譜或 ◀ ▶ 看每一步，想試別的走法按「沙盤推演」");
+  } else if (over && over.kind === "import") { msg = "棋局分析"; sub = "按「復盤」看每一步"; }
+  else if (over && over.draw) { msg = "和棋"; sub = over.why; }
   else if (over) { msg = winnerText(over); sub = over.why; }
   else if (thinking) { msg = "電腦思考中…"; sub = "等它一下"; }
   else if (S.mode === "online") {
@@ -945,7 +955,7 @@ function renderPanel() {
       const e = all[j]; if (!e) return "";
       const k = j + 1, sb = j >= base;
       const cls = (e.red ? "r" : "k") + (sb ? " sb" : "") + (k === cur ? " cur" : "") + (!sandbox && view == null && k === all.length ? " last" : "");
-      return `<b class="${cls}"${sb ? "" : ` data-k="${k}"`}>${e.note}</b>`;
+      return `<b class="${cls}"${sb ? "" : ` data-k="${k}"`}>${e.note}${sb ? "" : anaMark(j)}</b>`;
     };
     let out = "";
     for (let i = 0; i < all.length; i += 2) out += `<span class="pair"><i>${i / 2 + 1}.</i>${cell(i)}${cell(i + 1)}</span>`;
@@ -959,11 +969,12 @@ function renderPanel() {
   const endShow = !!over && !sandbox && view == null;
   $("endCard").hidden = !endShow;
   if (endShow) {
-    $("endBig").textContent = over.draw ? "和棋" : winnerText(over);
+    $("endBig").textContent = over.kind === "import" ? "棋局分析" : over.draw ? "和棋" : winnerText(over);
     $("endWhy").textContent = endInfo(over);
     $("endAgain").hidden = S.mode === "online" && !(S.online && NET.game);
   }
   $("reviewBar").hidden = !reviewing;
+  if (typeof renderAna === "function") renderAna();
   $("sandboxBar").hidden = !sandbox;
   $("rvFirst").disabled = $("rvPrev").disabled = !view;
   $("rvNext").disabled = $("rvLast").disabled = view == null || view >= n;
@@ -1382,6 +1393,7 @@ function watch(code) {
     const same = moves.length === S.moves.length && moves.every((m, i) => m === S.moves[i]);
     const prevResult = JSON.stringify(S.result);
     S.result = d.result || null;
+    S.undoLog = Array.isArray(d.undoLog) ? d.undoLog : [];
     if (!same) {
       const extendsOne = moves.length === S.moves.length + 1 && S.moves.every((m, i) => m === moves[i]);
       S.moves = moves; save();
@@ -1455,7 +1467,7 @@ function leaveRoom() {
     if (gm && gm[mine] === NET.me) { try { gameRef(code).update({ [mine]: null, drawOffer: null, updated: Date.now() }); } catch (e) { } }   // 讓出座位，別人才進得來
     NET.db.leave(code);                                                        // 對手還在 → 房間交給他；沒人 → 房間關閉
   }
-  NET.game = null; S.online = null; S.moves = []; S.result = null; S.flipped = false;
+  NET.game = null; S.online = null; S.moves = []; S.result = null; S.undoLog = []; S.flipped = false;
   save(); drawBoard(); rebuild(); setRoomUrl(null);
 }
 
@@ -1570,7 +1582,7 @@ function switchMode(mode) {
     token++; thinking = false;
     if (NET.unsub) { NET.unsub(); NET.unsub = null; }
     NET.game = null;
-    S.mode = mode; S.moves = []; S.result = null;
+    S.mode = mode; S.moves = []; S.result = null; S.undoLog = [];
     S.flipped = mode === "ai" ? !S.humanRed : false;
     if (mode === "online" && S.online) { S.flipped = !S.online.red; watch(S.online.code); }
     save(); drawBoard(); rebuild(); maybeAi();
@@ -1579,7 +1591,7 @@ function switchMode(mode) {
 }
 document.querySelectorAll("#modeSeg button").forEach(b => b.onclick = () => switchMode(b.dataset.mode));
 
-function newLocal() { token++; thinking = false; S.moves = []; S.result = null; S.undos = { r: 0, k: 0 }; view = null; sandbox = null; setupOpen = null; lastTag = null; if (S.mode === "ai") pickStyle(); save(); rebuild(); maybeAi(); }
+function newLocal() { token++; thinking = false; S.moves = []; S.result = null; S.undoLog = []; S.undos = { r: 0, k: 0 }; view = null; sandbox = null; setupOpen = null; lastTag = null; if (S.mode === "ai") pickStyle(); save(); rebuild(); maybeAi(); }
 $("btnNew").onclick = () => { if (inProgress()) ask("放棄這盤、重新開始？", newLocal); else newLocal(); };
 document.querySelectorAll("#sideSeg button").forEach(b => b.onclick = () => {
   const red = b.dataset.red === "1"; if (red === S.humanRed) return;
@@ -1605,10 +1617,126 @@ $("btnUndo").onclick = () => {
   token++;
   const side = undoSide(), patch = { moves: null };
   spendUndo(side, patch);
+  const entry = { b: S.moves.slice(0, S.moves.length - k), g: S.moves.slice(S.moves.length - k), r: side };   // 悔棋紀錄（分析用）
+  if (S.mode === "online") patch.undoLog = ((NET.game && NET.game.undoLog) || []).concat([entry]);
+  else S.undoLog = (S.undoLog || []).concat([entry]);
   if (S.mode !== "online") S.result = null;
   S.moves.splice(S.moves.length - k, k); save(); rebuild();
   if (S.mode === "online") { patch.moves = S.moves.slice(); pushOnline(patch); }
 };
+/* ───────── 引擎分析（2026-10-29）───────── */
+const PIKA = /^(8797)$/.test(location.port) || !!window.PIKAFISH_LOCAL;      // 從家裡電腦的輔助伺服器打開 → 用 Pikafish
+let ANA = null;                                                             // { key, engine, v[], best[], loss[], undo[], done, total }
+const MATE_CAP = 3000;
+const capScore = v => Math.max(-MATE_CAP, Math.min(MATE_CAP, v));
+function anaKey() { return S.moves.join(",") + "|" + JSON.stringify(S.undoLog || []); }
+const sqU = i => "abcdefghi"[i % 9] + (9 - ((i / 9) | 0));
+const uciOf = m => sqU((m / 100) | 0) + sqU(m % 100);
+const ofUci = u => { const f = q => (9 - +q[1]) * 9 + "abcdefghi".indexOf(q[0]); return f(u.slice(0, 2)) * 100 + f(u.slice(2, 4)); };
+const START_FEN = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1";
+/* 一個局面的分數（輪到走的那方的角度）＋ 最佳步；moves＝從開局走到這裡的棋步 */
+function evalPos(moves) {
+  const st = replay(moves), b = st.b, red = st.red;
+  const legalNow = E.legal(b.slice(), red);
+  if (!legalNow.length) return Promise.resolve({ v: -MATE_CAP, best: null });
+  if (PIKA) {
+    return fetch("/api/think", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fen: START_FEN, moves: moves.map(uciOf), ms: 500, mode: "full" }) })
+      .then(r => r.json()).then(r => { const c = (r.cands || [])[0]; return { v: c ? capScore(c.score) : 0, best: r.pick ? ofUci(r.pick) : null }; });
+  }
+  return new Promise(res => {
+    const done = r => res({ v: r ? capScore(r.score) : 0, best: r ? r.move : null });
+    if (worker) { const id = ++reqId; waiting.set(id, done); worker.postMessage({ id, board: b.slice(), red, depth: 4, time: 700, noise: 0, banned: [], seen: [], style: null, human: false }); }
+    else setTimeout(() => done(E.choose(b.slice(), red, 3, 500, 0, [], [], null, false)), 10);
+  });
+}
+const grade = loss => loss >= 400 ? 3 : loss >= 150 ? 2 : loss >= 60 ? 1 : 0;   // 0 好、1 欠佳、2 失誤、3 大漏
+const GRADE_NAME = ["好棋", "欠佳", "失誤", "大漏"], GRADE_MARK = ["", "?!", "?", "??"];
+function anaMark(j) {
+  if (!ANA || ANA.key !== anaKey() || ANA.loss[j] == null) return "";
+  const g = grade(ANA.loss[j]); return g ? `<sup class="q${g}">${GRADE_MARK[g]}</sup>` : "";
+}
+function anaComment(j) {
+  if (!ANA || ANA.key !== anaKey() || ANA.loss[j] == null) return "";
+  const g = grade(ANA.loss[j]), best = ANA.best[j];
+  const before = replay(S.moves.slice(0, j)).b;
+  const alt = best != null && best !== S.moves[j] ? `，引擎建議 ${notation(before.slice(), best)}` : "";
+  return g ? `${GRADE_NAME[g]}（−${(ANA.loss[j] / 100).toFixed(1)}）${alt}` : `好棋${best === S.moves[j] ? "，跟引擎一樣" : ""}`;
+}
+async function runAnalysis() {
+  if (!canReview()) return;
+  const key = anaKey();
+  if (ANA && ANA.key === key && (ANA.done >= ANA.total || ANA.running)) { renderAna(); return; }
+  const moves = S.moves.slice(), log = (S.undoLog || []).slice();
+  ANA = { key, engine: PIKA ? "Pikafish（家裡電腦）" : "網頁內建", v: [], best: [], loss: [], undo: [], done: 0, total: moves.length + 1 + log.length * 2, running: true };
+  const my = ANA; renderAna();
+  for (let i = 0; i <= moves.length; i++) {
+    if (ANA !== my) return;
+    const r = await evalPos(moves.slice(0, i)); my.v[i] = r.v; my.best[i] = r.best; my.done++;
+    if (i > 0) my.loss[i - 1] = Math.max(0, my.v[i - 1] + my.v[i]);
+    if (i % 4 === 0 || i === moves.length) { renderPanel(); renderAna(); }
+  }
+  for (const u of log) {                                                     // 悔掉的那步：悔棋前的局面 vs 走了那步之後
+    if (ANA !== my) return;
+    const a = await evalPos(u.b); my.done++;
+    const c = await evalPos(u.b.concat([u.g[0]])); my.done++;
+    my.undo.push({ u, loss: Math.max(0, a.v + c.v), best: a.best });
+    renderAna();
+  }
+  my.running = false; renderPanel(); renderAna();
+}
+function renderAna() {
+  const box = $("anaBox");
+  const show = view != null && !sandbox && ANA && ANA.key === anaKey();
+  box.hidden = !show; if (!show) return;
+  const A = ANA, pct = Math.round(100 * A.done / Math.max(1, A.total));
+  if (A.running) { box.innerHTML = `<div>分析中…${pct}%（${A.engine}）</div><div class="bar"><i style="width:${pct}%"></i></div>`; return; }
+  const sideStats = red => {
+    const js = A.loss.map((l, j) => j).filter(j => GF.hist[j] && GF.hist[j].red === red);
+    const cnt = [0, 0, 0, 0]; let sum = 0;
+    for (const j of js) { cnt[grade(A.loss[j])]++; sum += Math.min(A.loss[j], 1000); }
+    const avg = js.length ? sum / js.length / 100 : 0;
+    return `<div><b style="color:${red ? "var(--red-side)" : "inherit"}">${red ? "紅方" : "黑方"}</b>　平均每步 −${avg.toFixed(2)}<br>好棋 ${cnt[0]}・欠佳 ${cnt[1]}・<span class="q2">失誤 ${cnt[2]}</span>・<span class="q3">大漏 ${cnt[3]}</span></div>`;
+  };
+  let html = `<div class="row2">${sideStats(true)}${sideStats(false)}</div>`;
+  const worst = A.loss.map((l, j) => [l, j]).filter(([l]) => grade(l) >= 2).sort((x, y) => y[0] - x[0]).slice(0, 5);
+  if (worst.length) html += `<div>關鍵失誤（點一下跳過去）<ul>${worst.map(([l, j]) => `<li data-k="${j + 1}"><span class="q${grade(l)}">${GRADE_NAME[grade(l)]}</span> 第 ${j + 1} 步 ${GF.hist[j].red ? "紅" : "黑"} ${GF.hist[j].note}（−${(l / 100).toFixed(1)}）${A.best[j] != null && A.best[j] !== S.moves[j] ? `，應該走 ${notation(replay(S.moves.slice(0, j)).b, A.best[j])}` : ""}</li>`).join("")}</ul></div>`;
+  if (A.undo.length) {
+    const real = A.undo.filter(x => grade(x.loss) >= 2).length, fine = A.undo.filter(x => grade(x.loss) === 0).length;
+    html += `<div>悔棋 ${A.undo.length} 次：真的走錯 ${real} 次、其實沒錯 ${fine} 次<ul>${A.undo.map(x => {
+      const pos = replay(x.u.b).b, k = x.u.b.length, g = grade(x.loss);
+      const wasNote = notation(pos.slice(), x.u.g[0]);
+      const kept = S.moves.length > k && x.u.b.every((m, i) => m === S.moves[i]);
+      const now = kept ? `，改走 ${GF.hist[k].note}${A.loss[k] != null ? `（${GRADE_NAME[grade(A.loss[k])]}）` : ""}` : "，之後又退回更前面";
+      return `<li${kept ? ` data-k="${k + 1}"` : ""}>第 ${k + 1} 步${x.u.r ? "紅" : "黑"}原本走 ${wasNote}（<span class="q${g}">${GRADE_NAME[g]}${g ? ` −${(x.loss / 100).toFixed(1)}` : ""}</span>）${now}</li>`;
+    }).join("")}</ul></div>`;
+  }
+  html += `<div class="note">引擎：${A.engine}${PIKA ? "" : "（業餘程度，大漏抓得到，細微的地方可能看錯）"}</div>`;
+  if (!PIKA && pikaUrl()) html += `<button class="btn" id="anaPika">用 Pikafish 重新分析（家裡電腦）</button>`;
+  box.innerHTML = html;
+  const bp = $("anaPika"); if (bp) bp.onclick = sendToPika;
+}
+$("anaBox").addEventListener("click", e => { const li = e.target.closest("li[data-k]"); if (li) setView(Number(li.dataset.k)); });
+$("rvAna").onclick = () => runAnalysis();
+/* 送去家裡電腦用 Pikafish 分析：只有開過 ?pikafish=網址 的裝置才有這顆鈕 */
+function pikaUrl() { try { return localStorage.getItem("xiangqi-pikafish") || ""; } catch (e) { return ""; } }
+try { const u = new URLSearchParams(location.search).get("pikafish"); if (u && /^https?:\/\//.test(u)) localStorage.setItem("xiangqi-pikafish", u.replace(/\/$/, "")); } catch (e) { }
+function sendToPika() {
+  const data = { m: S.moves, u: S.undoLog || [], h: S.mode === "ai" ? S.humanRed : null };
+  location.href = pikaUrl() + "/xiangqi.html#ana=" + encodeURIComponent(JSON.stringify(data));
+}
+/* 從網址帶進來的棋局（送去分析）：當成一盤已經下完的雙人同機棋局，直接開始分析 */
+function importFromHash() {
+  const m = /#ana=(.*)$/.exec(location.hash); if (!m) return false;
+  try {
+    const d = JSON.parse(decodeURIComponent(m[1]));
+    if (!Array.isArray(d.m)) return false;
+    S.mode = "local"; S.online = null; S.moves = d.m.map(Number); S.undoLog = Array.isArray(d.u) ? d.u : [];
+    S.flipped = d.h === false; S.result = { draw: true, kind: "import", why: "送來分析的棋局" };
+    history.replaceState(null, "", location.pathname + location.search);
+    return true;
+  } catch (e) { return false; }
+}
+
 /* 復盤（下完才有）與沙盤推演 */
 $("rvFirst").onclick = () => { if (canReview()) setView(0); };
 $("rvPrev").onclick = () => { if (canReview()) setView((view == null ? S.moves.length : view) - 1); };
@@ -1650,13 +1778,13 @@ $("btnJoin").onclick = joinRoom;
 $("joinCode").addEventListener("keydown", e => { if (e.key === "Enter") joinRoom(); });
 $("btnLeave").onclick = () => ask(NET.p2p ? "離開這個房間？對手還在的話房間會留給他，沒人的話房間就關閉。" : "離開這個房間？之後輸入同一個房號還能回來。", leaveRoom);
 $("btnRematch").onclick = () => {
-  const go = () => { S.moves = []; S.result = null; view = null; sandbox = null; setupOpen = null; save(); rebuild(); pushOnline({ moves: [], result: null, drawOffer: null, rollback: null, review: null, undos: { red: 0, black: 0 } }); };
+  const go = () => { S.moves = []; S.result = null; view = null; sandbox = null; setupOpen = null; save(); rebuild(); pushOnline({ moves: [], result: null, drawOffer: null, rollback: null, review: null, undos: { red: 0, black: 0 }, undoLog: [] }); };
   if (inProgress()) ask("這盤還沒下完，確定重新開始？（對手的畫面也會清空）", go); else go();
 };
 function doSwap() {                                                  // 紅黑對調並清空棋盤（雙方都會收到）
   const gm = NET.game; if (!gm) return;
   S.moves = []; S.result = null; view = null; sandbox = null; setupOpen = null; save(); rebuild();
-  pushOnline({ red: gm.black || null, black: gm.red || null, moves: [], result: null, drawOffer: null, rollback: null, review: null, swapReq: null, undos: { red: 0, black: 0 } });
+  pushOnline({ red: gm.black || null, black: gm.red || null, moves: [], result: null, drawOffer: null, rollback: null, review: null, swapReq: null, undos: { red: 0, black: 0 }, undoLog: [] });
 }
 $("btnSwap").onclick = () => {                                      // 還沒開始或下完一盤時才能換；對手在的話要他同意（Gabi 2026-10-17）
   const gm = NET.game; if (!gm || (S.moves.length && !gameOver())) return;
@@ -1766,7 +1894,9 @@ function start(data) {
     document.querySelector('#modeSeg button[data-mode="online"]').hidden = true;
     if (S.mode === "online") { S.mode = "local"; S.moves = []; S.online = null; S.result = null; S.flipped = false; }
   }
-  drawBoard(); rebuild(); maybeAi();
+  const imported = importFromHash();
+  drawBoard(); rebuild();
+  if (imported) { setView(S.moves.length); runAnalysis(); } else maybeAi();
   connectNet();
 }
 if (window.claude && window.claude.hot && window.claude.hot.snapshot) window.claude.hot.snapshot(() => ({ S }));
