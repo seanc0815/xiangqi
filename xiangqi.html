@@ -1820,17 +1820,17 @@ let clackBuf = null;
 function clack(t0, hard, pitch) {
   const a = AC, sr = a.sampleRate, dur = 0.16, n = Math.floor(sr * dur);
   const buf = a.createBuffer(1, n, sr), d = buf.getChannelData(0);
-  const modes = [[2100, 0.009, 1.0], [3300, 0.007, 0.7], [4700, 0.005, 0.45], [6400, 0.004, 0.3], [1250, 0.014, 0.5], [520, 0.03, 0.35]];   // [頻率, 衰減時間常數, 音量]
+  const modes = [[1150, 0.012, 1.0], [1720, 0.009, 0.6], [2450, 0.006, 0.3], [680, 0.02, 0.55], [330, 0.035, 0.4]];   // [頻率, 衰減時間常數, 音量]（10-29 Gabi：太高太尖 → 整體往下壓、拿掉 3k 以上）
   const ph = modes.map(() => Math.random() * 6.28);
   for (let i = 0; i < n; i++) {
     const t = i / sr; let v = 0;
     for (let m = 0; m < modes.length; m++) { const [f, tau, g] = modes[m]; v += g * Math.sin(6.2832 * f * pitch * t + ph[m]) * Math.exp(-t / (tau * (hard > 1 ? 1.25 : 1))); }
-    if (t < 0.004) v += (Math.random() * 2 - 1) * (1 - t / 0.004) * 1.6;           // 接觸瞬間的噪音
-    v += 0.35 * Math.sin(6.2832 * 95 * t) * Math.exp(-t / 0.035);                  // 棋盤悶響
+    if (t < 0.003) v += (Math.random() * 2 - 1) * (1 - t / 0.003) * 0.7;           // 接觸瞬間的噪音（調小，不刺耳）
+    v += 0.6 * Math.sin(6.2832 * 140 * t) * Math.exp(-t / 0.045);                  // 棋盤悶響（加重）
     d[i] = v * 0.22 * hard * (i > n - 200 ? (n - i) / 200 : 1);
   }
   const src = a.createBufferSource(), lp = a.createBiquadFilter();
-  src.buffer = buf; lp.type = "lowpass"; lp.frequency.value = 9000;
+  src.buffer = buf; lp.type = "lowpass"; lp.frequency.value = 3500;
   src.connect(lp); lp.connect(a.destination); src.start(t0);
 }
 function sfx(kind) {
@@ -1839,9 +1839,9 @@ function sfx(kind) {
   const t = a.currentTime + 0.01;
   try {
     switch (kind) {
-      case "pick": clack(t, 0.45, 1.25); break;                                    // 拿起：輕輕碰一下
+      case "pick": break;                                                          // 拿起：真的棋子拿起來沒聲音（10-29 Gabi 嫌假）
       case "move": clack(t, 1 + Math.random() * 0.15, 0.95 + Math.random() * 0.1); break;
-      case "cap": clack(t, 1.5, 0.85); clack(t + 0.045, 0.7, 1.1); break;             // 吃子：重拍，被吃的子彈一下
+      case "cap": clack(t, 1.5, 0.85); clack(t + 0.05, 0.6, 1.0); break;             // 吃子：重拍，被吃的子彈一下
       case "check": tone(740, t + 0.12, 0.09, "square", 0.08); tone(988, t + 0.24, 0.16, "square", 0.08); break;
       case "warn": tone(260, t, 0.18, "sawtooth", 0.07); break;
       case "win": [523, 659, 784, 1047].forEach((f, i) => tone(f, t + 0.15 + i * 0.13, i === 3 ? 0.5 : 0.22, "triangle", 0.16)); break;
