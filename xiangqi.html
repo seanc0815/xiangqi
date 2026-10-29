@@ -416,8 +416,8 @@ function ENGINE() {
     return ms.map(m => [sc(m), m]).sort((x, y) => y[0] - x[0]).map(x => x[1]);
   }
 
-  function search(board, red, maxDepth, timeMs, noise, banned) {
-    const b = board.slice(), t0 = Date.now();
+  function search(board, red, maxDepth, timeMs, noise, banned, seen) {
+    const b = board.slice(), t0 = Date.now(), seenSet = seen && seen.length ? new Set(seen) : null;
     let nodes = 0, stop = false;
     function quiesce(alpha, beta, side, qd) {
       nodes++;
@@ -462,7 +462,10 @@ function ENGINE() {
       const scored = [];
       for (const m of root) {
         const cap = make(b, m);
-        const raw = -negamax(d - 1, -Infinity, -(alpha - (noise || 0)), !red, 1);
+        let raw = -negamax(d - 1, -Infinity, -(alpha - (noise || 0)), !red, 1);
+        //  2026-10-29：走回已經出現過的局面 → 一直將同一步（長將）當成壞棋，其他重複最多算和；這樣第二次就會變招，不會拖到規則禁止
+        if (seenSet && raw < MATE - 200 && seenSet.has(b.join("") + (red ? "b" : "r")))
+          raw = attacked(b, kingPos(b, !red), red) ? Math.min(raw, -5000) : Math.min(raw, 0);   // 長將最後一定得變招，重複只是拖時間
         unmake(b, m, cap);
         if (stop) break;
         if (raw > alpha) alpha = raw;
@@ -1006,7 +1009,7 @@ function play(m) {
 /* ───────── 電腦（背景執行緒） ───────── */
 let worker = null;
 try {
-  const src = `const E=(${ENGINE.toString()})();onmessage=e=>{const d=e.data;postMessage({id:d.id,r:E.search(d.board,d.red,d.depth,d.time,d.noise,d.banned)});};`;
+  const src = `const E=(${ENGINE.toString()})();onmessage=e=>{const d=e.data;postMessage({id:d.id,r:E.search(d.board,d.red,d.depth,d.time,d.noise,d.banned,d.seen)});};`;
   worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
 } catch (e) { worker = null; }
 const waiting = new Map();
@@ -1017,8 +1020,9 @@ if (worker) {
 let reqId = 0;
 function think(board, red, lv, cb) {
   const L = LEVELS[lv], id = ++reqId, banned = red === G.red ? bannedMoves() : [];   // 電腦也不走長將、長捉
-  if (worker) { waiting.set(id, cb); worker.postMessage({ id, board, red, depth: L.depth, time: L.time, noise: L.noise, banned }); }
-  else setTimeout(() => cb(E.search(board, red, Math.min(L.depth, 3), L.time, L.noise, banned)), 30);
+  const seen = red === G.red ? G.keys.slice() : [];                                 // 出現過的局面：搜尋時避開重複將軍
+  if (worker) { waiting.set(id, cb); worker.postMessage({ id, board, red, depth: L.depth, time: L.time, noise: L.noise, banned, seen }); }
+  else setTimeout(() => cb(E.search(board, red, Math.min(L.depth, 3), L.time, L.noise, banned, seen)), 30);
 }
 /* 開局譜（2026-10-13）：前幾步從常見開局裡隨機挑，下法比較像真人；不在譜上就照常思考 */
 const BOOK = {
