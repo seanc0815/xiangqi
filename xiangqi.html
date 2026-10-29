@@ -163,7 +163,7 @@
   details.rules { border-top: 1px solid var(--rule); padding-top: 10px; font-size: 14px; }
   details.rules summary { cursor: pointer; font-weight: 700; }
   details.rules li { margin: 4px 0; } details.rules ul { padding-left: 1.2em; margin: 8px 0; }
-  #btnHint { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  #btnHint { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
 </style>
 
 <div class="wrap">
@@ -1911,14 +1911,15 @@ $("btnHint").onclick = () => {
 let hintLong = false, hintTimer = 0;
 $("btnHint").addEventListener("pointerdown", () => {
   clearTimeout(hintTimer); hintLong = false;
-  if (!(PIKA || pikaUrl()) || S.mode === "online" || S.mode === "puzzle" || startB || sandbox || view != null || !myTurn()) return;
+  if (S.mode === "online" || S.mode === "puzzle" || startB || sandbox || view != null || !myTurn()) return;
   hintTimer = setTimeout(() => { hintLong = true; pikaHint(); }, 2000);
 });
-for (const ev of ["pointerup", "pointerleave", "pointercancel"]) $("btnHint").addEventListener(ev, () => clearTimeout(hintTimer));
+for (const ev of ["pointerup", "pointercancel"]) $("btnHint").addEventListener(ev, () => clearTimeout(hintTimer));
 $("btnHint").addEventListener("contextmenu", e => e.preventDefault());
 function pikaHint() {
   const my = token; $("btnHint").disabled = true; $("sub").textContent = "幫你想一下…";
-  fetch((PIKA ? "" : pikaUrl()) + "/api/think", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fen: START_FEN, moves: S.moves.map(uciOf), ms: 2000, mode: "full" }) })
+  const ac = new AbortController(); setTimeout(() => ac.abort(), 6000);        // 連不到家裡電腦（別人的手機、沒開 Tailscale）→ 6 秒內退回內建引擎
+  fetch((PIKA ? "" : pikaUrl() || "https://desktop-drh5eot.tailb653f2.ts.net:8443") + "/api/think", { method: "POST", signal: ac.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fen: START_FEN, moves: S.moves.map(uciOf), ms: 2000, mode: "full" }) })
     .then(r => r.json()).then(r => {
       if (my !== token || !r.pick) throw 0;
       const m = ofUci(r.pick); if (!E.legal(G.b.slice(), G.red).includes(m)) throw 0;
