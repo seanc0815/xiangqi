@@ -153,7 +153,11 @@
   .ana .row2 { display: flex; gap: 10px; flex-wrap: wrap; } .ana .row2 > div { flex: 1; min-width: 140px; }
   .ana ul { margin: 0; padding-left: 1.1em; } .ana li { margin: 2px 0; }
   .ana li[data-k] { cursor: pointer; }
-  .moves.canpick b[data-k] { cursor: pointer; } .moves.canpick b[data-k]:hover { background: rgba(120, 200, 160, .12); }
+  .moves.canpick b[data-k] { cursor: pointer; }
+  .puzgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 5px; margin-top: 6px; max-height: 200px; overflow-y: auto; }
+  .puzgrid button { min-height: 38px; font: inherit; font-size: 13px; border-radius: 8px; border: 1px solid var(--rule); background: var(--ground); color: var(--ink); cursor: pointer; }
+  .puzgrid button.ok { background: var(--jade-soft); border-color: var(--jade); }
+  .puzgrid button[aria-pressed="true"] { outline: 2px solid var(--jade); font-weight: 700; } .moves.canpick b[data-k]:hover { background: rgba(120, 200, 160, .12); }
   @media (max-width: 900px) { .moves { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; max-height: none; padding-bottom: 6px; } }
   .empty { color: var(--muted); font-size: 13px; }
   details.rules { border-top: 1px solid var(--rule); padding-top: 10px; font-size: 14px; }
@@ -230,6 +234,7 @@
           <button data-mode="local" aria-pressed="true">雙人同機</button>
           <button data-mode="online" aria-pressed="false">連線對戰</button>
           <button data-mode="ai" aria-pressed="false">對電腦</button>
+          <button data-mode="puzzle" aria-pressed="false">殘局</button>
         </div>
       </div>
 
@@ -268,6 +273,16 @@
         <span class="note">隨機：每盤從搶攻、棄子、穩健抽一種。除了純算，電腦都會設局（故意送子引你吃）、也會起疑（你送子時多想幾步再吃）。</span>
       </div>
 
+      <div class="group" id="puzOpts" hidden>
+        <span class="label">殘局挑戰：紅先，在限定步數內將死黑方</span>
+        <div class="seg" id="tierSeg">
+          <button data-t="0">入門（2–3 步殺）</button>
+          <button data-t="1">進階（4–5 步殺）</button>
+          <button data-t="2">高手（6 步以上）</button>
+        </div>
+        <div class="puzgrid" id="puzGrid"></div>
+        <span class="note" id="puzNote"></span>
+      </div>
       <div class="group" id="undoOpts">
         <span class="label">悔棋限制（每人每盤）</span>
         <div class="seg" id="undoSeg">
@@ -661,18 +676,19 @@ let sel = -1, targets = [], hint = null, thinking = false, token = 0, pendingCon
 let GF = null;          // 完整棋局（棋譜用）；復盤時 G 是看到第 view 步的局面
 let view = null;        // 復盤：正在看第幾步（null = 現在；下完才能看，可以等於步數＝最後的局面）
 let sandbox = null;     // 沙盤推演：{ base: 從第幾步的局面開始, moves: [] }，不存檔、不記進棋譜
-let setupOpen = null;   // 設定區展開？null = 自動（還沒開始就展開，走了第一步就收起）
+let setupOpen = null;
+let startB = null;      // 殘局：題目的起始局面（null＝一般開局）   // 設定區展開？null = 自動（還沒開始就展開，走了第一步就收起）
 let NET = { db: null, me: null, unsub: null, game: null, note: "" };   // 連線狀態（不存檔）
 
 function defaults() {
-  return { mode: "local", moves: [], flipped: false, humanRed: true, level: 2, lvV: 2, style: "random", styleNow: null, seatRed: true, online: null, result: null, face: true, undoLimit: 3, undos: { r: 0, k: 0 }, sound: true, voice: true, undoLog: [] };
+  return { mode: "local", moves: [], flipped: false, humanRed: true, level: 2, lvV: 2, style: "random", styleNow: null, seatRed: true, online: null, result: null, face: true, undoLimit: 3, undos: { r: 0, k: 0 }, sound: true, voice: true, undoLog: [], puz: { tier: 0, id: 0, solved: [] } };
 }
 /* 對坐：只在雙人同機時，畫面上方那一方的字轉 180 度 */
 const faceOn = () => S.mode === "local" && S.face !== false;
 const topIsRed = () => S.flipped;
 
 function replay(moves) {
-  const b = E.parse(E.START), hist = [], keys = [posKey(b, true)];
+  const b = startB ? startB.slice() : E.parse(E.START), hist = [], keys = [posKey(b, true)];
   let red = true;
   for (const m of moves) {
     if (!E.legal(b.slice(), red).includes(m)) throw new Error("illegal");
@@ -867,7 +883,7 @@ function posOver(X) {
 let overMemo = { key: null, val: null }, sbMemo = { key: null, val: null };
 function gameOver() {
   if (S.result) return S.result;                                   // 認輸、同意和棋
-  const key = S.moves.join(",");
+  const key = (startB ? startB.join("") : "") + S.moves.join(",");
   if (overMemo.key === key) return overMemo.val;
   const val = posOver(GF);
   overMemo = { key, val };
@@ -885,6 +901,7 @@ const canReview = () => !!gameOver() && S.moves.length > 0 && !thinking;   // �
 function viewerRed() { return S.mode === "ai" ? S.humanRed : S.mode === "online" && S.online ? S.online.red : null; }
 function myTurn() {
   if (sandbox) return !thinking && !sbOver();                      // 沙盤：兩邊都是你
+  if (S.mode === "puzzle") return !gameOver() && !thinking && view == null && G.red;   // 殘局：你永遠是紅方
   if (gameOver() || thinking || view != null) return false;
   if (S.mode === "ai") return G.red === S.humanRed;
   if (S.mode === "online") {
@@ -899,11 +916,12 @@ let nameMemo = { key: null, val: null };
 function endInfo(over) {                                           // 結束卡第二行：殺法／原因、步數、電腦設定
   let name = null;
   if (over.kind === "mate" && !S.result) {
-    const key = S.moves.join(",");
+    const key = (startB ? startB.join("") : "") + S.moves.join(",");
     if (nameMemo.key !== key) { let v = null; try { v = mateName(GF.b, GF.red, GF.hist[GF.hist.length - 1]); } catch (e) { } nameMemo = { key, val: v }; }
     name = nameMemo.val;
   }
   const parts = [name ? (name.endsWith("殺") ? name : `${name}絕殺`) : over.why];
+  if (S.mode === "puzzle" && PUZ()) parts.push(puzTitle(PUZ()));
   if (S.mode === "ai") parts.push(`電腦${LEVEL_NAMES[S.level] || ""}・${S.style !== "plain" && S.styleNow ? STYLE_NAMES[S.styleNow] : "純算"}`);
   return parts.join("　");
 }
@@ -931,6 +949,7 @@ function renderPanel() {
     else if (!NET.game || !NET.game.red || !NET.game.black) { msg = "等對手加入"; sub = `把房號 ${S.online.code} 傳給對手`; }
     else { msg = G.red === S.online.red ? `輪到你（${side}）` : `等對手走（${side}）`; sub = lastText(check); }
   } else if (S.mode === "ai") { const st = S.style !== "plain" && S.styleNow ? `・${STYLE_NAMES[S.styleNow]}` : ""; msg = G.red === S.humanRed ? `輪到你（${side}）${st ? "・電腦" + st.slice(1) : ""}` : `電腦（${side}）${st}`; sub = lastText(check); }
+  else if (S.mode === "puzzle") { msg = PUZ() ? puzTitle(PUZ()) : "殘局"; sub = G.red ? (check ? "被將軍了" : "輪到你（紅）：找出殺法") : "黑方應…"; }
   else { msg = `${side}走棋`; sub = lastText(check); }
   $("msg").textContent = msg; $("sub").textContent = sub;
 
@@ -969,7 +988,8 @@ function renderPanel() {
   const endShow = !!over && !sandbox && view == null;
   $("endCard").hidden = !endShow;
   if (endShow) {
-    $("endBig").textContent = over.kind === "import" ? "棋局分析" : over.draw ? "和棋" : winnerText(over);
+    $("endBig").textContent = over.kind === "import" ? "棋局分析" : S.mode === "puzzle" ? (over.why === "放棄" ? "看解答" : over.winRed ? (S.puzFail ? "殺是殺了，但沒在步數內" : "破解成功！") : "被反殺了") : over.draw ? "和棋" : winnerText(over);
+    $("endAgain").textContent = S.mode === "puzzle" ? (over.winRed && !S.puzFail ? "下一題" : "再試一次") : "再來一盤";
     $("endWhy").textContent = endInfo(over);
     $("endAgain").hidden = S.mode === "online" && !(S.online && NET.game);
   }
@@ -981,7 +1001,7 @@ function renderPanel() {
 
   // 設定區：還沒開始就展開；走了第一步收成一行
   const L = undoLimit(), undoTxt = L < 0 ? "悔棋不限" : L === 0 ? "不能悔棋" : `悔棋 ${L} 次`;
-  $("setupSum").textContent = S.mode === "ai" ? `對電腦・${LEVEL_NAMES[S.level] || ""}・${S.style === "plain" ? "純算" : S.styleNow ? STYLE_NAMES[S.styleNow] : "隨機"}・${undoTxt}`
+  $("setupSum").textContent = S.mode === "puzzle" ? (PUZ() ? `殘局・${puzTitle(PUZ())}` : "殘局") : S.mode === "ai" ? `對電腦・${LEVEL_NAMES[S.level] || ""}・${S.style === "plain" ? "純算" : S.styleNow ? STYLE_NAMES[S.styleNow] : "隨機"}・${undoTxt}`
     : S.mode === "local" ? `雙人同機・${S.face !== false ? "對坐" : "同一邊看"}・${undoTxt}` : `連線對戰・${undoTxt}`;
   const wantOpen = setupOpen == null ? !n : setupOpen;
   if ($("setup").open !== wantOpen) $("setup").open = wantOpen;
@@ -990,6 +1010,8 @@ function renderPanel() {
   document.querySelectorAll("#undoSeg button").forEach(b => b.disabled = S.mode === "online" && (!S.online || !fresh));
   document.querySelectorAll("#modeSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === S.mode));
   $("aiOpts").hidden = S.mode !== "ai";
+  $("puzOpts").hidden = S.mode !== "puzzle"; $("undoOpts").hidden = S.mode === "puzzle";
+  if (S.mode === "puzzle") renderPuzList();
   $("localOpts").hidden = S.mode !== "local";
   document.querySelectorAll("#faceSeg button").forEach(b => b.setAttribute("aria-pressed", (b.dataset.face === "1") === (S.face !== false)));
   $("onlineBox").hidden = S.mode !== "online";
@@ -1005,7 +1027,11 @@ function renderPanel() {
   $("btnHint").disabled = thinking || !myTurn();
   $("btnNew").hidden = online;
   const busy = thinking || !!over || !n || view != null || (online && !both);
-  $("btnGiveUp").disabled = busy;
+  $("btnGiveUp").disabled = S.mode === "puzzle" ? (thinking || !!over || view != null) : busy;
+  $("btnGiveUp").textContent = S.mode === "puzzle" ? "看解答" : "認輸";
+  $("btnDraw").hidden = S.mode === "puzzle";
+  $("btnNew").textContent = S.mode === "puzzle" ? "重來" : "新局";
+  if (S.mode === "puzzle") { $("btnUndo").textContent = "退一步"; $("btnUndo").disabled = thinking || view != null || !!over || !S.moves.length; }
   $("btnDraw").disabled = busy;
   $("btnSound").setAttribute("aria-pressed", S.sound !== false); $("btnSound").textContent = S.sound !== false ? "🔊" : "🔇";
   $("btnVoice").setAttribute("aria-pressed", S.voice !== false);
@@ -1306,6 +1332,7 @@ function bookMove() {
   return ok.length ? ok[(Math.random() * ok.length) | 0] : null;
 }
 function maybeAi() {
+  if (S.mode === "puzzle") return puzAfter();
   if (S.mode !== "ai" || G.red === S.humanRed || gameOver()) return;
   const bk = bookMove();
   if (bk != null) {
@@ -1529,6 +1556,7 @@ $("confirmNo").onclick = () => { $("confirm").hidden = true; const f = pendingNo
 
 /* 認輸（雙人同機、對電腦、連線） */
 $("btnGiveUp").onclick = () => {
+  if (S.mode === "puzzle") return puzShow();
   if (gameOver() || thinking || !S.moves.length || view != null) return;
   if (S.mode === "online") {
     if (!(S.online && NET.game && NET.game.red && NET.game.black)) return;
@@ -1584,6 +1612,7 @@ function switchMode(mode) {
     NET.game = null;
     S.mode = mode; S.moves = []; S.result = null; S.undoLog = [];
     S.flipped = mode === "ai" ? !S.humanRed : false;
+    startB = mode === "puzzle" && PUZ() ? puzBoard(PUZ()) : null;
     if (mode === "online" && S.online) { S.flipped = !S.online.red; watch(S.online.code); }
     save(); drawBoard(); rebuild(); maybeAi();
   };
@@ -1591,7 +1620,8 @@ function switchMode(mode) {
 }
 document.querySelectorAll("#modeSeg button").forEach(b => b.onclick = () => switchMode(b.dataset.mode));
 
-function newLocal() { token++; thinking = false; S.moves = []; S.result = null; S.undoLog = []; S.undos = { r: 0, k: 0 }; view = null; sandbox = null; setupOpen = null; lastTag = null; if (S.mode === "ai") pickStyle(); save(); rebuild(); maybeAi(); }
+function newLocal() {
+  if (S.mode === "puzzle") return puzStart(S.puz.id); token++; thinking = false; S.moves = []; S.result = null; S.undoLog = []; S.undos = { r: 0, k: 0 }; view = null; sandbox = null; setupOpen = null; lastTag = null; if (S.mode === "ai") pickStyle(); save(); rebuild(); maybeAi(); }
 $("btnNew").onclick = () => { if (inProgress()) ask("放棄這盤、重新開始？", newLocal); else newLocal(); };
 document.querySelectorAll("#sideSeg button").forEach(b => b.onclick = () => {
   const red = b.dataset.red === "1"; if (red === S.humanRed) return;
@@ -1613,6 +1643,13 @@ document.querySelectorAll("#styleSeg button").forEach(b => b.onclick = () => {
 
 $("btnUndo").onclick = () => {
   if (sandbox) return sandboxUndo();
+  if (S.mode === "puzzle") {
+    if (thinking || !S.moves.length || gameOver()) return;
+    token++;
+    S.moves.splice(S.moves.length - (S.moves.length % 2 === 0 ? 2 : 1));
+    S.puzOff = !S.moves.every((m, i) => m === PUZ().l[i]); S.puzFail = false;   // 自己退回去：再給一次機會（下一步會重新檢查）
+    save(); rebuild(); return;
+  }
   const k = undoCount(); if (!k || thinking) return;
   token++;
   const side = undoSide(), patch = { moves: null };
@@ -1624,6 +1661,101 @@ $("btnUndo").onclick = () => {
   S.moves.splice(S.moves.length - k, k); save(); rebuild();
   if (S.mode === "online") { patch.moves = S.moves.slice(); pushOnline(patch); }
 };
+/* ───────── 殘局挑戰（2026-10-29）─────────
+   PUZZLES：{ f: 局面（只有棋盤那段 FEN，一律紅先）, n: 幾步殺, l: 解答（紅黑交替的棋步）, c: 是不是連將殺 }
+   照解答走 → 電腦照解答應；走了別步 → 用網頁引擎檢查還是不是殺棋：是就接受、之後電腦自己找最頑強的應法；不是就退回重想 */
+const PUZZLES = /*__PUZZLES__*/[{"f":"4ka3/5P3/3a5/1N7/1c3c3/p7P/4C4/4B4/4A4/4KAB2","n":3,"l":[5831,4546,2821,403,3130],"c":false},{"f":"2bak4/9/4CR3/6Pnp/p2R5/3p5/P3P3P/5c3/4A4/2BA1KB2","n":3,"l":[3912,4857,2368,5766,6805],"c":false},{"f":"5Rbn1/4k1CnC/5P3/p3p4/2b1P4/6N1P/4cr3/4B4/4A4/4KAB2","n":3,"l":[2314,1322,4031,2221,503],"c":true},{"f":"3akab2/2Rn5/4C4/p8/4N3p/6PR1/P3P3P/4B4/3c5/2BAKA3","n":3,"l":[1112,7521,4021,2736,1215],"c":false},{"f":"2baka3/4nP3/8b/p3R4/7c1/2p6/P3P4/4C3N/3nN4/2BAKAB2","n":3,"l":[3132,4341,3241,2736,1405],"c":false},{"f":"2baka3/3R2r2/9/p1N1nR3/1rb2P3/2P6/7p1/4N4/4C4/2BAKAB2","n":3,"l":[1203,413,3205,2736,304],"c":false},{"f":"2ba1k3/3Ra4/2n2c3/p1p3p1C/4PN3/2P2C3/6P1P/1r2B1N2/4A4/3AK4","n":3,"l":[4124,504,3508,2736,2405],"c":false},{"f":"2ba1k1n1/2C1a4/3N2P1b/p1p5p/3c5/8P/P1P1P4/5C3/6R2/3AKAB2","n":3,"l":[2423,3941,7806,2606,2314],"c":true},{"f":"4ka3/4a4/3rb1P2/p3N3p/1nP3b2/3N5/P4R2P/1C1AC1c2/9/2BA1K3","n":3,"l":[3120,6968,5968,3544,6805],"c":false},{"f":"2bckab2/3Ra4/9/p1p1R4/6P2/2P4NC/P3P3P/4B4/2r6/3AKAB2","n":3,"l":[5308,7476,8476,2736,3113],"c":false},{"f":"2ba1Rb2/4k4/n6c1/p3C3r/4P1NP1/6p2/P3C1P2/3p5/9/1cBAKAB2","n":3,"l":[4039,1312,4223,622,5857],"c":true},{"f":"4kar2/n1NCa4/b5n2/p1R1p4/2c3P1p/3R5/P7P/6N2/4A4/2BA1KB2","n":3,"l":[2938,1321,1209,403,4821],"c":false},{"f":"1R1ckab1r/4a2C1/4b4/pN2C3p/4c4/2P6/P1nr4P/2N1B4/4A4/2BAK3R","n":3,"l":[2811,5712,1612,3544,1239],"c":false},{"f":"C3kab2/1R1Ca4/4bcnr1/2R1p3p/2P1r4/6p2/P5P1P/4B1N2/4A4/2BAK4","n":3,"l":[1211,2588,6988,3544,1102],"c":false},{"f":"2bak1b1r/4a2C1/4c1c2/p3C1p1p/9/1nP2R2P/P3P1P2/2N6/2r1A4/2BAK1B1R","n":3,"l":[8586,2423,5023,2736,2305],"c":false},{"f":"4k4/6R2/8r/PC6p/2PNp4/1N7/6P1P/4B4/4A4/2B1K4","n":4,"l":[2831,405,4629,3544,3922,2622,2922],"c":false},{"f":"1C4b2/C2Pak3/b8/9/4Nn1P1/9/c8/4B4/4A4/2BA1K3","n":4,"l":[4021,1423,119,622,1213,1838,2140],"c":false},{"f":"3a5/5k2C/4bNc2/8N/p8/9/n4n2P/5C3/4A4/2BA1KB2","n":4,"l":[3524,2202,2330,5942,2407,1405,1708],"c":false},{"f":"2b1ka3/4aRN2/4b4/1n7/9/2p6/P8/1C2B1C2/4A4/2BAK4","n":4,"l":[6466,4756,1432,403,3230,2821,3021],"c":false},{"f":"C2aC4/6R2/1r3k3/4P4/p7p/9/P3p1p1P/4B4/4A4/2BAK2N1","n":4,"l":[9,5867,914,6776,8476,6069,405],"c":false},{"f":"3a4C/1r2kr3/5aN2/p1R5p/9/9/P3P2RP/4B4/4A4/4KAB2","n":4,"l":[2931,1312,817,1417,2405,1221,3130],"c":true},{"f":"3a4C/1C2k4/b3ba3/1P1R5/1r4n1p/8P/9/4B4/4A1p2/2BK1A3","n":4,"l":[3012,1304,1001,1802,1203,413,312],"c":true},{"f":"2b1ka3/3P2R2/1r4c2/p8/9/8p/P3P3P/2C3N1C/4A4/2BAK1B2","n":4,"l":[7153,2487,5308,513,1213,405,1506],"c":false},{"f":"2r1ka3/4a1n2/R3b4/4p1N1C/2p6/2P6/P4R2P/4B4/4A4/3A1KB2","n":4,"l":[1822,403,5957,304,3316,3140,3508],"c":false},{"f":"3aka3/4n4/1c7/6R2/p2N4p/6P2/P3P3P/4B1C1N/9/3AKAB2","n":4,"l":[3331,1982,8476,3645,6970,4554,7007],"c":false},{"f":"1CRak1br1/1C7/b8/9/4p2nP/p1P3B2/P3P4/9/9/3AKAB2","n":4,"l":[211,313,100,405,1113,4554,1001],"c":false},{"f":"2bak4/4aC3/n3b4/p3C3p/5N1c1/6N2/P3P3P/9/2n1A4/2BA1K3","n":4,"l":[5134,405,4124,504,1441,3544,3423],"c":false},{"f":"3akab2/9/2R6/p3C1N1p/2p3b2/P3P4/1r3c3/3C5/9/2BAKAB2","n":4,"l":[3322,513,2211,405,6668,1323,2023],"c":true},{"f":"6RC1/4k4/b2a1cN2/p7r/2p5p/9/P1P5P/N3B4/4A4/2BAK2R1","n":4,"l":[8816,1322,604,2113,1613,2221,403],"c":true},{"f":"3aka1R1/1R7/b4c3/p3C4/9/2p6/P1Pr4P/4B1n1C/4A4/2B1KA3","n":4,"l":[716,2314,1014,5784,7684,2736,1413],"c":false},{"f":"3a1kb2/4a1N2/2n1bP3/pr7/3N4P/2P6/P5R1P/3CB3B/4A4/3AK4","n":4,"l":[6059,2832,5932,2736,2322,1323,3223],"c":false},{"f":"2bak1bRC/4a4/9/p8/1np1p4/5N3/2P5c/3CB4/4A4/1rBK1AR2","n":4,"l":[8706,1305,605,413,504,1312,5057],"c":true},{"f":"2bc1k3/3Ca4/3ab1P2/1R4N2/p3p3p/2P6/P3N3P/B8/9/3AKAB2","n":4,"l":[3322,504,2215,405,2832,1323,3223],"c":false},{"f":"2bak1b2/4a4/1r4n2/p4RP1p/2p6/4R3P/2P6/4C4/4A4/c1BA1KB2","n":4,"l":[3324,1923,3223,222,4946,3847,2305],"c":false},{"f":"2bak1CN1/8R/8n/p2r4C/2n1p3p/2B6/P3P3P/9/5R3/2BAKA3","n":4,"l":[724,2615,1715,3035,1514,4049,2405],"c":false},{"f":"2Rnkab2/4a2Nn/4c4/8p/p1p1C4/5r3/P1P1P4/B3C4/4A4/4KAB2","n":4,"l":[1623,5023,8584,2386,7686,3544,203],"c":false},{"f":"2ba1ab2/2N2k3/2C6/p1P1p1R1p/9/9/P2cP1PrP/9/9/2BAKAB2","n":4,"l":[3315,1423,2930,2736,3021,222,2122],"c":false},{"f":"1r1a1kb2/4a4/3P4n/2p6/p3R3p/7R1/P1P5P/N3C4/1c2A4/2B1KAB2","n":4,"l":[5250,504,5014,7382,7684,2938,4013],"c":false},{"f":"2nak1b2/rN2a4/6C2/p1CPp4/6P1p/5R3/P3P3P/3NB4/1R7/2BAKA3","n":4,"l":[2422,622,2931,4453,7377,5362,5005],"c":false},{"f":"3akab2/9/4b4/p1RNP1p1p/1c2p4/9/P3P3P/4B2CR/4AC1r1/2NAK1B2","n":4,"l":[3122,513,3011,405,2932,1323,3223],"c":false},{"f":"2ba1a1C1/2nk3C1/3cb4/8p/p5p2/3Nc1P2/PR6P/2N1BR3/4A1r2/4KAB2","n":4,"l":[6814,513,4829,2120,5557,4948,5748],"c":true},{"f":"C1Rak4/4a4/4crn1b/2p6/1r2C3p/5p3/P1P1P1P1P/2N3N2/4A4/2BAK1BR1","n":4,"l":[211,3701,1113,405,1304,514,8816],"c":true},{"f":"3ak1b2/4a4/r1n1b4/p1p3R1p/4Nrp2/9/P1Pc2P1P/4C4/4C4/1RBAKAB2","n":4,"l":[4023,405,2316,514,3315,1423,1513],"c":true},{"f":"1R7/3Nak3/3r5/p2P5/9/P7P/9/4B4/4A4/2BAK4","n":5,"l":[3021,2736,2122,3645,155,4546,5559,1323,5923],"c":false},{"f":"5a3/4k4/5N3/7C1/P3N4/2P5P/4P4/4B1c2/9/3AKA3","n":5,"l":[2330,1312,4023,1221,3433,6987,6787,513,3324],"c":false},{"f":"C3k4/4a4/9/p8/2C5p/6P1P/4R4/4B4/9/1r1AKAB2","n":5,"l":[6783,2736,5813,405,1331,8210,3132,1014,3802],"c":false},{"f":"3a5/4ak3/1P3n2b/3N1RrP1/6b2/2B6/9/9/9/2BAKA3","n":5,"l":[3433,2606,3324,626,2423,1405,2314,504,1405],"c":false},{"f":"2b6/1N1ka4/5a3/p8/9/2B3P1P/r8/C6CR/4A4/2BAK4","n":5,"l":[7016,1321,7167,5462,7686,6258,6758,2736,6366],"c":false},{"f":"4ka3/4a3c/2n1b2P1/1N3R3/8P/9/4CN2r/4B4/4A4/4KAB2","n":5,"l":[2516,2001,2821,403,2110,312,3230,1321,3021],"c":false},{"f":"4ka3/2r1c4/6R2/p8/4P3p/7N1/P1R5P/BC2B4/4A4/3AK4","n":5,"l":[5611,1367,8586,4453,2406,6768,6467,403,605],"c":false},{"f":"R4a3/4kcN2/3a1r2b/6p2/2N1C4/2P4p1/P8/9/4A4/2BAK1B2","n":5,"l":[3831,2322,1532,1423,9,1304,3120,513,900],"c":true},{"f":"4kab1C/4a4/9/pr4p1p/9/3NR4/P7P/B8/3N5/3AKAB2","n":5,"l":[4913,403,1314,2831,4831,304,1405,413,504],"c":false},{"f":"4ra3/4k4/n2a5/6p2/5R3/p1P3P1P/P8/3C5/4A2C1/2B1KAB2","n":5,"l":[4140,1314,4004,1811,7977,1104,7684,4554,6668],"c":false},{"f":"r1ba1R3/1c2k4/9/9/pPn2NP2/9/P3P4/B2CBA3/9/3AKC3","n":5,"l":[4124,1322,523,2213,2314,1322,2405,3645,1412],"c":false},{"f":"2N1ka3/4ac3/9/8p/C3c1N2/2PC5/P1n5P/4B1n2/4A4/4KAB2","n":5,"l":[3600,1303,209,413,920,1312,4231,1221,18],"c":true},{"f":"4kab2/6n2/3P1a3/p3C1c2/1r6C/3R5/P3P3P/2N6/4A4/2BAK4","n":5,"l":[4847,413,4711,1304,2112,3738,1138,2736,3802],"c":false},{"f":"3ak1bn1/4a4/1C2P4/p8/8p/7R1/PCr2N2P/4B4/9/3AKAB2","n":5,"l":[1901,5602,5207,201,5940,4453,4023,1323,706],"c":false},{"f":"2bak1b2/4a4/n6Rn/C4N3/1P1N5/4P3P/2P6/5C3/4A4/2B1KAr2","n":5,"l":[2731,622,2523,8706,3922,222,2322,687,2213],"c":false},{"f":"3aka3/9/9/p1p1p3p/2bN1N2c/P5R2/4r3P/B3C4/4A4/3AK1B2","n":5,"l":[4134,4442,3415,413,3920,1312,5148,4239,4839],"c":false},{"f":"3aka3/4c4/4R1n2/pR3c2p/9/3r2P2/P1P6/C1N1C3B/4A4/2B2K3","n":5,"l":[2832,2736,6770,4850,3250,3645,7007,2407,5005],"c":false},{"f":"2bak4/1c2a3r/4n4/p8/1CP1R4/4C4/P7P/N3BA3/6R2/2B1KA3","n":5,"l":[4044,405,7806,514,4417,2215,615,1405,1506],"c":false},{"f":"1Cb2a3/3k3c1/3ab2P1/p6Rp/9/2p6/n3P3P/9/5R3/2BAKAB2","n":5,"l":[7714,513,3428,218,107,4756,2810,1203,1405],"c":false},{"f":"3a1ab2/3k5/3Nb4/4P4/6p1p/pn7/6P1P/4B2N1/2rR1R3/2BAKA3","n":5,"l":[7574,313,2110,2238,7475,1321,7714,513,7521],"c":false},{"f":"2baka1n1/9/9/p4P2p/2prC1b2/9/P1P5P/3R5/4A3c/2BK1AB2","n":5,"l":[6639,413,3223,3847,3912,1304,2322,513,1203],"c":false},{"f":"r2k5/3n3r1/3a1Rn2/p5p2/2p1R4/4P1P2/P1P6/2NCB4/9/3AKAB2","n":5,"l":[2324,1607,4013,18,2422,1809,2221,3847,2112],"c":false},{"f":"2b1ka3/4a4/2N1b4/p1R2P3/6p1p/9/P5P1P/1r2C4/4A4/R1B1KAB2","n":5,"l":[6731,6401,2930,218,2001,2736,118,4453,1811],"c":false},{"f":"2bk1ab1r/4a4/3c5/p1NR2p1p/9/9/P2p2P1P/4C4/4A4/2B1KAB2","n":5,"l":[2910,312,3029,2120,2920,3544,2011,1203,1113],"c":false},{"f":"2bk1a3/2N1a2c1/1cn6/p1p1p3p/5N3/6R2/P3P3P/3C5/9/3AKAB2","n":5,"l":[5148,1321,4821,1612,2112,304,1214,403,4130],"c":true},{"f":"2b1k1b2/1r2aRC2/9/6N2/8p/1p7/P3P3P/4C3B/Nc2A4/2BAK2c1","n":5,"l":[6770,403,7007,312,1450,1321,3314,2113,5048],"c":false},{"f":"R1c2kb2/4a3c/2P4r1/4C1p1p/6b2/9/1R2P1P1P/5CN2/9/2BAKAB2","n":5,"l":[2,1303,5510,1711,211,3544,1114,504,1013],"c":false},{"f":"4ka3/5r3/R2R5/4p1p2/p2n5/2p1P1P1p/P7n/1C3C2B/4AN3/2BAK4","n":5,"l":[1800,413,2119,3920,1920,4756,9,1304,2002],"c":false},{"f":"Ccr1kab2/1R6n/4ba3/4pNC1p/2p6/6P2/2P1P3P/9/9/2BAKAB2","n":5,"l":[3331,513,3128,405,3221,1303,2,2202,1014],"c":false},{"f":"rnb1ka3/1C2a4/4bc3/pNP1C2cp/6R2/P8/4P3P/6p2/4A4/1RBAK1B2","n":5,"l":[4239,3488,7686,2314,1014,218,1415,6978,1506],"c":false},{"f":"1rb2arn1/3ka2R1/2Nc5/2p5p/pR7/4C4/P1P1P3P/2Nc5/9/2BAKAB2","n":5,"l":[3701,2122,1634,633,3433,3544,110,1221,3330],"c":false},{"f":"3ak1b1r/2R1a4/4bR2n/N8/4p1p1p/6P2/P1P1P3P/C1N2C3/9/2BAKAB2","n":5,"l":[1112,4049,6364,1323,6401,313,2720,4958,2003],"c":false},{"f":"r3kab1C/4a4/b1n1c4/pcpR2p2/3R5/4C1P2/P1P1P3P/2N1B4/4A4/3K1A3","n":5,"l":[3021,2837,2120,3738,3912,3839,2022,2736,2213],"c":false},{"f":"2b1kabnr/4aC3/r1n6/p7p/2p1R4/6c2/P1P5P/2NRC4/4A4/2B1KAB2","n":5,"l":[6612,5149,4049,2031,4931,1822,3122,3847,2213],"c":false},{"f":"r1b1k4/2nR5/2ca3c1/2p3r1p/p5p2/2n1C4/P3P1P1P/N5N2/4AR3/2B1KAB2","n":5,"l":[7714,4766,7666,3645,1213,403,1405,1104,504],"c":false},{"f":"3akab2/1r2r4/1cc1b1N2/p3C1R2/1np6/6P2/P1P1P3P/2N2C3/4A4/R1B1KAB2","n":5,"l":[2405,405,5142,1315,3332,1014,3214,514,4241],"c":false},{"f":"2bak2nr/2nCa2R1/4Rc3/r7p/4C4/1p3p3/P1P1P1P1P/1c7/4N4/2BAKAB2","n":5,"l":[2213,405,1615,6469,4041,2732,7669,3544,1506],"c":false},{"f":"1n1akrNR1/4a4/1cc1b4/p3C1p1p/9/2P3P2/P3P3P/R3C1N2/1r7/2BAKAB2","n":5,"l":[6768,2083,8476,7376,8576,3544,623,1923,705],"c":false},{"f":"3a1k3/1N1P5/4bP3/7c1/2b6/6B2/9/5A3/4A4/3K5","n":6,"l":[1003,504,310,3416,1027,2206,2720,622,1213,405,2314],"c":false},{"f":"4kcR2/4aNN2/2n6/9/8p/2P1P4/9/B3B4/9/3AKA3","n":6,"l":[1431,403,3120,312,1532,4453,615,514,1514,5352,1413],"c":false},{"f":"3ak4/4a4/2R5b/4P1N2/P5b2/4P4/8P/4B4/4A4/3A1KB2","n":6,"l":[3326,4226,2026,1305,3122,313,2608,1323,805,405,2213],"c":false},{"f":"2r1k1r2/2Nca4/8R/9/P1P6/8P/3R5/4B4/4A4/2B1KA3","n":6,"l":[5712,211,1211,1303,1114,313,2622,403,1413,608,2221],"c":false},{"f":"1Cba1k3/9/3N1a3/p5P2/9/4NnP2/P8/9/4A4/2BA1KB2","n":6,"l":[3324,5069,8677,6958,8367,5865,2423,6584,7684,2736,2314],"c":false},{"f":"2b6/4k4/3R4r/2p6/3n2P2/2P3B2/P2N4P/5A3/4C4/3AK1B2","n":6,"l":[2126,2938,5738,1312,7675,3958,2617,1203,3821,5839,2110],"c":false},{"f":"2b1k4/2r1a4/4b1C1N/5R2p/4C4/p5P2/4P3P/9/4A4/2BAK1B2","n":6,"l":[2615,403,3230,1112,4039,4554,3912,5463,1210,1321,3021],"c":false},{"f":"5a1C1/3k2C2/b1R1n4/4p4/3r4p/6N2/4P3P/2N1B4/4A4/4KAB2","n":6,"l":[2022,1838,2231,4453,5132,3822,3122,3984,7684,5352,2221],"c":false},{"f":"1C2ka3/2cCa4/4b4/2R5p/4N4/4P4/8P/4Bp3/4A2r1/4KAB2","n":6,"l":[2911,6877,1102,1303,4023,413,110,1312,211,1221,2340],"c":false},{"f":"2ba1k3/6N2/3ab1n2/8p/p8/9/P2p4P/5C1C1/4A4/2BK1ABc1","n":6,"l":[6877,514,7668,2441,7741,313,6876,5758,7034,3544,3432],"c":false},{"f":"1Cbaka3/nRR6/5n3/4P4/6b2/9/2P1Pr2p/4B4/4A4/2B1KA3","n":6,"l":[3122,5986,7686,6261,2213,513,1113,405,1314,504,1013],"c":false},{"f":"4ka3/3R5/b2c2r2/1r6p/p5P2/1N1RC4/P3P3P/B8/4A4/4KAB2","n":6,"l":[4839,3645,3940,2831,4031,2422,3122,513,1213,405,2223],"c":false},{"f":"C1ba2br1/5k3/3a5/8p/3P3n1/2p5P/P1P1N4/5C3/7R1/3AKAB2","n":6,"l":[5841,4350,7907,313,716,1423,9,1303,1634,4756,3432],"c":false},{"f":"3ak4/4a2R1/n2c4b/3N1C2p/p1P4P1/9/P3P3P/6N2/4A4/2BAK1B2","n":6,"l":[3231,405,1607,2606,706,514,3132,3645,615,1405,3023],"c":false},{"f":"1rba2CR1/5k3/nc3a3/p7p/2P1r4/P8/5R2P/4B3N/4A4/2BAK4","n":6,"l":[716,1405,5923,504,8586,4041,2341,1923,4123,3544,2305],"c":false},{"f":"3ak4/3Ca4/b3R4/p7p/2R1C4/3N5/P3P1p1P/2N1B4/4A4/4KrBc1","n":6,"l":[7686,1838,2225,1321,4831,3822,2507,413,3124,1314,705],"c":false},{"f":"2ba1kb2/2C1a4/9/p1p5p/6p2/3R1r3/P5P1P/4C3N/4A4/2BAK1B2","n":6,"l":[4850,1323,5023,504,2314,4251,1112,3544,1257,2938,5758],"c":false},{"f":"2ba1k3/1R2a4/nn3r3/p7p/3N1P3/P1B1P2N1/8P/2C6/9/3AKAB2","n":6,"l":[6502,514,5233,2324,3920,2433,2003,1423,1019,1321,1921],"c":false},{"f":"2b1kab2/3ca1n2/6N1P/p4RpN1/2p6/4P1P2/P8/C2AB4/5R3/2B1K4","n":6,"l":[3205,1305,3415,1214,7714,513,1413,403,2431,3342,3120],"c":false},{"f":"1n2k4/4a4/4R4/2p5p/pr1r2p2/P1P6/4N1P1P/B1NCC4/4A4/3AK1B2","n":6,"l":[2213,405,6768,3719,5839,1922,3922,4251,2241,5150,4124],"c":false},{"f":"2b1kac2/4aR3/4b1N2/p7R/1r2r1p2/P6CP/4P1P2/4B3B/4A4/3AK4","n":6,"l":[5207,3728,1413,403,3528,4039,2832,3984,7684,4251,3205],"c":false},{"f":"2bak1bR1/3NaR2n/9/p3N3p/6P2/9/P3P3P/4B3C/4A4/2crKAB2","n":6,"l":[8584,8311,1417,1305,1223,1114,1714,313,1405,405,706],"c":false},{"f":"2baknR2/n3ac3/4c4/p3C4/4pNP2/2N1P1r2/P7P/1C7/4A4/2BAK1B2","n":6,"l":[4122,222,6401,902,4728,5187,7686,8786,8586,4049,2821],"c":false},{"f":"2bak1r2/4a4/4c3b/6NRp/p1p6/4C1P2/P1P1P3P/2N2C3/4A4/2BAK1B2","n":6,"l":[3316,624,3433,2240,3324,222,2406,1305,1623,413,615],"c":false},{"f":"2ba3R1/3ck4/2n1bN3/p1p1p4/9/2P3Pp1/P3P3P/1R3C3/6c2/2BAKrB2","n":6,"l":[8586,2206,6410,7877,1012,1322,2334,313,8677,5261,3441],"c":false},{"f":"1Rbk1a2r/4an3/4b4/3P4p/p5p2/4C4/P1N1P1P1P/7cC/4A3N/4KAB2","n":6,"l":[5637,7067,8767,1431,3031,3544,3122,4453,3720,304,2213],"c":false},{"f":"2bak1br1/5R3/1c5c1/p1R1p4/8p/6P2/P2NP3P/BCC3N2/9/3AKAB2","n":6,"l":[6502,313,2931,2522,3122,403,6466,1321,2221,304,2103],"c":false},{"f":"1nbk1P3/4a4/c3b4/p1p1p3p/3r5/2PN5/P3P3P/6C2/3C1R3/2BAKAB2","n":6,"l":[7539,2736,6966,1305,7705,312,504,1854,3937,5457,4829],"c":false},{"f":"1c2kab2/rCP1a4/4bn3/p1R1p4/9/7p1/P3P2rP/2N1B1RN1/9/2BAKA3","n":6,"l":[1112,1303,2902,513,6915,910,1513,405,203,2304,304],"c":false},{"f":"5k3/3c5/5a2n/p4N2p/7N1/9/P7P/9/5C3/2BAKAB2","n":7,"l":[4326,2736,2607,3645,724,1215,3221,2313,2413,4554,1324,5463,2132],"c":false},{"f":"r3ka3/4a4/4R4/2R2N3/9/3r4p/6P1P/B8/9/3AKAB2","n":7,"l":[3213,4812,1324,513,2934,1284,8584,3,8485,384,8584,5362,2213],"c":false},{"f":"2b1ka3/9/4ba3/1N7/pP2R1p2/4P4/2C3P2/3A5/9/4KAr2","n":7,"l":[2811,413,1130,1304,4038,8786,8586,513,3011,403,3839,1321,3921],"c":false},{"f":"4kab2/4a2CC/1Pc6/6P2/9/8P/4P4/3AB1N2/9/4KAB2","n":7,"l":[1920,1323,2021,622,2112,513,1708,405,1607,514,3324,2238,2415],"c":false},{"f":"3ak4/9/1r7/3R1N3/6b1p/2PN5/P3P3P/4B4/4A4/2B1KA3","n":7,"l":[3215,413,4831,1922,1522,1322,3142,4453,6253,313,8584,1305,3031],"c":false},{"f":"3ak4/9/5a3/4p1Nrn/P1P6/1C4P2/8R/4B4/9/1cBAKA2R","n":7,"l":[4649,313,6255,403,8980,3479,8079,312,7975,1321,5510,1203,7521],"c":false},{"f":"C4a3/3k5/3a3c1/p1P5p/6b2/4C3P/PR2P4/4B3B/4A4/4KA3","n":7,"l":[5510,1203,2930,2588,6787,8816,3021,304,1016,2736,2112,3645,1613],"c":false},{"f":"9/1Rck5/7C1/p2N5/8p/4P1P2/P1r5P/nN2B4/4A4/4KAB2","n":7,"l":[2543,1221,6747,5647,6447,6374,8584,2736,4339,2122,1019,1120,1920],"c":false},{"f":"5a3/2N1ak3/4P3b/cC2n4/p3N4/7p1/P1P6/4B4/4A4/4KAB2","n":7,"l":[4033,3124,2819,2718,1118,1303,1910,3645,2213,1423,3340,2322,1811],"c":false},{"f":"2b1ka3/4a4/9/2C1n3p/p8/P5p1P/4R4/B1N1nC3/4A4/3K1AB2","n":7,"l":[5831,222,3122,6748,2934,403,6548,3544,3407,312,6866,1321,4829],"c":false},{"f":"4kab2/4a3n/b8/p3n1N2/4NP2p/2R5P/P8/4C4/4A4/4KAB2","n":7,"l":[6731,1321,3314,1838,4738,1734,1421,413,3811,1322,4029,2221,1112],"c":false},{"f":"2bk1ab2/6r2/3a3P1/2pR5/p2NC3P/9/P8/4B1N2/4A4/2BAK4","n":7,"l":[3021,304,3922,513,2215,405,2112,3645,1213,4554,4041,5463,1532],"c":false},{"f":"1rbk1a3/4a4/4b4/3N5/R2N2p2/8P/n1P3P2/C3B4/4A4/2BAK4","n":7,"l":[6366,5473,6657,1321,3023,7366,7666,312,3609,110,910,1203,3920],"c":false},{"f":"R1b1kab2/4a4/7Rc/4N4/8p/2r6/P3P3P/2N1C4/9/3AKAB2","n":7,"l":[3120,622,2522,4720,2220,403,2,312,6548,4453,6766,1321,2011],"c":false},{"f":"2b1ka3/1c2a4/4b4/pnC6/2PP1N3/1R6P/P8/4C3B/4A4/2BAK4","n":7,"l":[4628,403,2810,2206,6766,1321,2930,304,6667,2736,1012,3645,3031],"c":false},{"f":"2nR2b2/4Ck3/4N4/p1c1p3p/9/2p6/5r2P/2N4pB/7R1/2BAKA3","n":7,"l":[1310,5986,8576,221,312,1423,2203,8685,7685,3544,1221,622,2122],"c":false},{"f":"3k1ab2/4a3C/b1PNc4/p3R4/8p/9/P3Pp2P/4B4/4A4/2B1KA3","n":7,"l":[3128,1321,2021,2267,8584,1802,2112,304,2801,513,102,1303,203],"c":false},{"f":"3akabC1/1R7/3rb2R1/p3p3p/9/P8/4P1P2/4N2r1/9/3AKAB2","n":7,"l":[2570,2119,1019,2202,1910,3544,7068,313,6814,3140,1013,403,1405],"c":false},{"f":"4kab2/4a4/N3b4/p3r3p/9/4C4/P2cP2NP/3R5/9/2BAKAB2","n":7,"l":[1811,5712,6612,1321,6142,513,4231,405,3124,514,4950,3544,2441],"c":false},{"f":"1Cbakac2/5R3/9/p3p4/1n4r1p/4N4/P3P3P/3AC4/9/2BAK2N1","n":7,"l":[4942,3748,4231,4867,3124,615,8367,513,1413,405,1315,2736,1513],"c":false},{"f":"2b1k1b2/3ca2C1/3Nc4/6Cnp/p1R3P2/9/P3P3P/4B4/4A4/4KAB2","n":7,"l":[3802,1303,211,2267,8767,3451,1112,5168,7668,313,1203,403,3330],"c":false},{"f":"3aka3/r6r1/2n6/8p/p1PnC1C2/3R2P2/P3R3P/8N/4A4/2B1KAB2","n":7,"l":[4049,3932,4206,413,4950,3249,4849,1314,642,2031,4931,3645,4241],"c":false},{"f":"2ba1ab2/3r1k3/4C3r/p1p1CnP2/5N3/2P6/P4c3/7R1/4A1R2/2BAK1B2","n":7,"l":[3332,5932,7833,513,7016,1423,3332,2322,3235,2221,1661,2736,6157],"c":false},{"f":"1Rck1a3/4a3n/4b4/8p/p1p2NP1c/6r2/P1P6/3C1C2N/4A4/2BAK1B2","n":7,"l":[4122,5187,6886,3645,102,312,2229,1221,211,8786,7686,4554,1112],"c":false},{"f":"3ak1b1r/4aR3/4b3c/2r1C2np/p1p6/4R1p2/2P5P/NC6B/4A4/2B1KA3","n":7,"l":[6401,2902,1413,405,4948,201,1304,514,4812,313,413,1405,1314],"c":false},{"f":"2bn1kb2/4a1N2/3a5/3P5/1P7/3N1C3/c7p/9/9/3AKAB2","n":8,"l":[1532,314,3221,1425,4841,2532,2132,5481,8576,504,3215,403,5048,1321,3021],"c":false},{"f":"4k4/3Pa4/1n2ba1Pb/3P5/4C1p2/9/4P1P2/3AB4/4A4/5KB2","n":8,"l":[3021,4251,6051,2606,2524,1930,4031,3019,2423,1912,2112,626,2314,2606,1405],"c":false},{"f":"5k1C1/9/3a1a3/p5Ncp/9/2PN4P/P3P4/4B4/4A4/3AK1B2","n":8,"l":[3316,504,1623,413,2334,2736,4831,1304,3423,413,725,3645,5445,3544,5344],"c":false},{"f":"2bak4/4a4/4b4/4C2r1/p2PC3p/9/PN2P3n/1R3R3/9/2BAKAB2","n":8,"l":[5538,3431,6870,6243,7043,3140,4307,2206,706,1305,3821,413,6410,1322,624],"c":false},{"f":"1Rbk2b2/4a1N2/3a3P1/p1P2N3/8p/4P4/P7P/3AB4/2rcA4/3K2C2","n":8,"l":[102,312,2920,2736,2011,7411,211,1203,8475,4453,8742,1305,4239,2113,3221],"c":false},{"f":"1R1Ck1b2/9/4c4/p7p/3r2p2/2B1P4/PN3Rc1P/4B1N2/7r1/3AKA3","n":8,"l":[321,413,110,1304,5914,7976,8676,2267,4767,3984,7684,6058,6958,3544,1001],"c":false},{"f":"4kab2/4ac3/r1n1N4/6RNp/p1P6/4C4/P3P3P/8B/4A4/2BAK4","n":8,"l":[2211,403,3330,1321,3021,1412,3423,622,4948,1827,2122,1213,2221,1312,2112],"c":false},{"f":"3aka3/5r3/5NR1b/9/9/6P1P/4N4/9/9/2BAKAB2","n":9,"l":[2426,413,8476,1423,2623,1304,7684,313,5847,403,2319,312,4730,1321,3023,1203,1921],"c":false},{"f":"2Na1a3/2N6/5kn2/C8/6p1p/2P6/4P1P1P/5A3/4K2c1/5A3","n":9,"l":[1130,2314,221,1413,2110,1322,1003,2221,2718,2431,320,2112,2001,1221,3019,3120,1938],"c":false}];
+const PUZ = () => PUZZLES[S.puz && S.puz.id] || null;
+const TIERS = [p => p.n <= 3, p => p.n >= 4 && p.n <= 5, p => p.n >= 6];
+const puzTitle = p => `第 ${PUZZLES.indexOf(p) + 1} 題・${CN[p.n] || p.n}步殺${p.c ? "・連將" : ""}`;
+function puzBoard(p) {
+  const b = []; for (const ch of p.f.replace(/\//g, "")) { if (/\d/.test(ch)) for (let k = 0; k < +ch; k++) b.push("."); else b.push(ch); }
+  return b;
+}
+function puzStart(id) {
+  if (!PUZZLES.length) return;
+  token++; thinking = false; view = null; sandbox = null; S.result = null; S.puzOff = false; S.puzFail = false; S.undoLog = [];
+  S.puz.id = Math.max(0, Math.min(PUZZLES.length - 1, id)); S.moves = []; S.flipped = false;
+  startB = puzBoard(PUZ()); setupOpen = false; save(); drawBoard(); rebuild();
+  $("sub").textContent = `${CN[PUZ().n] || PUZ().n}步之內將死黑方。按「提示」看下一步、「看解答」直接看答案`;
+}
+function puzNext() {
+  const t = S.puz.tier || 0, ids = PUZZLES.map((p, i) => i).filter(i => TIERS[t](PUZZLES[i]));
+  const after = ids.filter(i => i > S.puz.id && !S.puz.solved.includes(i));
+  return after[0] ?? ids.find(i => !S.puz.solved.includes(i)) ?? ids[0] ?? 0;
+}
+function renderPuzList() {
+  const t = S.puz.tier || 0;
+  document.querySelectorAll("#tierSeg button").forEach(b => b.setAttribute("aria-pressed", +b.dataset.t === t));
+  const ids = PUZZLES.map((p, i) => i).filter(i => TIERS[t](PUZZLES[i]));
+  const key = t + ":" + S.puz.id + ":" + S.puz.solved.length;
+  if ($("puzGrid").dataset.key !== key) {
+    $("puzGrid").dataset.key = key;
+    $("puzGrid").innerHTML = ids.map(i => `<button data-i="${i}" class="${S.puz.solved.includes(i) ? "ok" : ""}" aria-pressed="${i === S.puz.id}">${i + 1}</button>`).join("");
+  }
+  const done = ids.filter(i => S.puz.solved.includes(i)).length;
+  $("puzNote").textContent = PUZZLES.length ? `這一級破解 ${done}／${ids.length} 題。題目是 Pikafish 自己對下找出來、驗證過「第一步只有一種」的殺局。` : "題目還在產生中。";
+}
+$("puzGrid").addEventListener("click", e => { const b = e.target.closest("button[data-i]"); if (b) puzStart(+b.dataset.i); });
+document.querySelectorAll("#tierSeg button").forEach(b => b.onclick = () => { S.puz.tier = +b.dataset.t; save(); puzStart(puzNext()); });
+function puzWin() {
+  if (!S.puz.solved.includes(S.puz.id)) S.puz.solved.push(S.puz.id);
+  save(); renderPanel();
+}
+/* 你走完一步之後 */
+function puzAfter() {
+  const p = PUZ(); if (!p) return;
+  const ov = gameOver();
+  if (ov) { if (ov.winRed && !S.puzFail) puzWin(); return; }
+  if (G.red) return;                                               // 輪到你
+  const k = S.moves.length, mine = S.moves[k - 1];
+  const redMoves = (k + 1) >> 1;
+  if (S.puzFail) return puzReply(0);                              // 已經失手：電腦直接全力下
+  if (!S.puzOff && mine === p.l[k - 1]) return puzReply(p.l[k]);   // 照解答
+  // 走了別步：還殺得到嗎？
+  thinking = true; renderPanel();
+  const my = token, left = p.n - redMoves;
+  const depth = Math.min(8, 2 * left + 1);
+  const go = r => {
+    if (my !== token) return;
+    thinking = false;
+    const mated = r && r.score <= -(100000 - 200) && left >= 0;
+    S.puzOff = true;
+    if (!mated && !S.puzFail) { S.puzFail = true; save(); }       // 殺不到了：不提示（Gabi：被將死自己就知道），黑方默默全力反擊
+    puzReply(r && r.move);
+  };
+  if (worker) { const id = ++reqId; waiting.set(id, go); worker.postMessage({ id, board: G.b.slice(), red: false, depth, time: 2500, noise: 0, banned: [], seen: [], style: null, human: false }); }
+  else setTimeout(() => go(E.choose(G.b.slice(), false, Math.min(depth, 4), 1500, 0, [], [], null, false)), 10);
+}
+function puzReply(m) {
+  if (m == null) return;
+  thinking = true; renderPanel();
+  const my = token;
+  setTimeout(() => {
+    if (my !== token) return;
+    thinking = false;
+    if (S.puzOff) {                                                // 離開解答：電腦自己找最頑強的應法
+      const go = r => { if (my === token && r && r.move != null) play(r.move); };
+      const ms = S.puzFail ? 3000 : 1500;
+      if (worker) { const id = ++reqId; waiting.set(id, go); worker.postMessage({ id, board: G.b.slice(), red: false, depth: 6, time: ms, noise: 0, banned: [], seen: G.keys.slice(), style: null, human: false }); }
+      else go(E.choose(G.b.slice(), false, 4, 1000, 0, [], [], null, false));
+    } else play(m);
+  }, 450);
+}
+/* 看解答：從頭照解答走一遍（一步 0.8 秒） */
+function puzShow() {
+  const p = PUZ(); if (!p) return;
+  token++; thinking = false; S.puzOff = false; S.moves = []; S.result = { winRed: false, why: "放棄" }; save(); rebuild();
+  const my = token; let i = 0;
+  const step = () => {
+    if (my !== token) return;
+    if (i >= p.l.length) return;
+    S.moves.push(p.l[i]); i++; S.puzShow = true; save(); rebuild(S.moves[S.moves.length - 1] % 100); sfx("move");
+    setTimeout(step, 800);
+  };
+  thinking = true; renderPanel(); setTimeout(() => { thinking = false; step(); }, 300);
+}
+
 /* ───────── 引擎分析（2026-10-29）───────── */
 const PIKA = /^(8797)$/.test(location.port) || !!window.PIKAFISH_LOCAL;      // 從家裡電腦的輔助伺服器打開 → 用 Pikafish
 let ANA = null;                                                             // { key, engine, v[], best[], loss[], undo[], done, total }
@@ -1639,7 +1771,7 @@ function evalPos(moves) {
   const st = replay(moves), b = st.b, red = st.red;
   const legalNow = E.legal(b.slice(), red);
   if (!legalNow.length) return Promise.resolve({ v: -MATE_CAP, best: null });
-  if (PIKA) {
+  if (PIKA && S.mode !== "puzzle") {
     return fetch("/api/think", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fen: START_FEN, moves: moves.map(uciOf), ms: 500, mode: "full" }) })
       .then(r => r.json()).then(r => { const c = (r.cands || [])[0]; return { v: c ? capScore(c.score) : 0, best: r.pick ? ofUci(r.pick) : null }; });
   }
@@ -1730,7 +1862,7 @@ function importFromHash() {
   try {
     const d = JSON.parse(decodeURIComponent(m[1]));
     if (!Array.isArray(d.m)) return false;
-    S.mode = "local"; S.online = null; S.moves = d.m.map(Number); S.undoLog = Array.isArray(d.u) ? d.u : [];
+    S.mode = "local"; S.online = null; startB = null; S.moves = d.m.map(Number); S.undoLog = Array.isArray(d.u) ? d.u : [];
     S.flipped = d.h === false; S.result = { draw: true, kind: "import", why: "送來分析的棋局" };
     history.replaceState(null, "", location.pathname + location.search);
     return true;
@@ -1746,7 +1878,11 @@ $("rvExit").onclick = () => setView(null);
 $("endReview").onclick = () => { if (canReview()) setView(S.moves.length); };
 $("endSandbox").onclick = $("rvSandbox").onclick = enterSandbox;
 $("sbExit").onclick = exitSandbox;
-$("endAgain").onclick = () => { if (S.mode === "online") $("btnRematch").click(); else newLocal(); };
+$("endAgain").onclick = () => {
+  if (S.mode === "online") return $("btnRematch").click();
+  if (S.mode === "puzzle") { const ov = gameOver(); return puzStart(ov && ov.winRed && !S.puzFail ? puzNext() : S.puz.id); }
+  newLocal();
+};
 $("moves").addEventListener("click", e => { const b = e.target.closest("b[data-k]"); if (b && canReview()) setView(Number(b.dataset.k)); });
 $("setup").addEventListener("toggle", () => { setupOpen = $("setup").open; });
 addEventListener("keydown", e => {
@@ -1765,6 +1901,7 @@ document.querySelectorAll("#undoSeg button").forEach(b => b.onclick = () => {
 $("btnFlip").onclick = () => { S.flipped = !S.flipped; save(); drawBoard(); render(); };
 $("btnHint").onclick = () => {
   if (!myTurn()) return;
+  if (S.mode === "puzzle" && !S.puzOff && PUZ()) { const m = PUZ().l[S.moves.length]; if (m != null) { hint = m; drawPieces(); $("sub").textContent = "提示：" + notation(G.b, m); return; } }
   const my = token; $("btnHint").disabled = true; $("sub").textContent = "幫你想一下…";
   think(G.b.slice(), G.red, 1, r => {
     if (my !== token || !r || r.move == null) return;
@@ -1803,8 +1940,22 @@ $("btnCopy").onclick = async () => {
 
 /* ───────── 音效（2026-10-29）：全部用 WebAudio 合成，不用音檔；🔊 鈕可以關 ───────── */
 let AC = null;
+/* 10-29 Gabi：換成真的錄音 → Kenney「Impact Sounds」（CC0）的木頭敲擊：落子 wood_l0–4、吃子 wood_m0–4，每次隨機挑一個；還沒載好就用合成的 */
+const WOOD = { l: [], m: [] };
+function loadWood() {
+  if (WOOD.loading || !AC) return; WOOD.loading = true;
+  for (const k of ["l", "m"]) for (let i = 0; i < 5; i++)
+    fetch(`sfx/wood_${k}${i}.mp3`).then(r => r.arrayBuffer()).then(a => new Promise((ok, no) => AC.decodeAudioData(a, ok, no))).then(b => WOOD[k].push(b)).catch(() => { });
+}
+function playWood(k, t, gain) {
+  const list = WOOD[k]; if (!list.length) return false;
+  const src = AC.createBufferSource(), g = AC.createGain();
+  src.buffer = list[(Math.random() * list.length) | 0]; src.playbackRate.value = 0.96 + Math.random() * 0.08; g.gain.value = gain;
+  src.connect(g); g.connect(AC.destination); src.start(t); return true;
+}
 function ac() {
   if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; } }
+  loadWood();
   if (AC && AC.state === "suspended") AC.resume().catch(() => { });
   return AC;
 }
@@ -1840,8 +1991,8 @@ function sfx(kind) {
   try {
     switch (kind) {
       case "pick": break;                                                          // 拿起：真的棋子拿起來沒聲音（10-29 Gabi 嫌假）
-      case "move": clack(t, 1 + Math.random() * 0.15, 0.95 + Math.random() * 0.1); break;
-      case "cap": clack(t, 1.5, 0.85); clack(t + 0.05, 0.6, 1.0); break;             // 吃子：重拍，被吃的子彈一下
+      case "move": if (!playWood("l", t, 0.9)) clack(t, 1 + Math.random() * 0.15, 0.95 + Math.random() * 0.1); break;
+      case "cap": if (!playWood("m", t, 1)) { clack(t, 1.5, 0.85); clack(t + 0.05, 0.6, 1.0); } else playWood("l", t + 0.06, 0.45); break;   // 吃子：重拍，被吃的子再碰一下
       case "check": tone(740, t + 0.12, 0.09, "square", 0.08); tone(988, t + 0.24, 0.16, "square", 0.08); break;
       case "warn": tone(260, t, 0.18, "sawtooth", 0.07); break;
       case "win": [523, 659, 784, 1047].forEach((f, i) => tone(f, t + 0.15 + i * 0.13, i === 3 ? 0.5 : 0.22, "triangle", 0.16)); break;
@@ -1894,6 +2045,7 @@ function start(data) {
     document.querySelector('#modeSeg button[data-mode="online"]').hidden = true;
     if (S.mode === "online") { S.mode = "local"; S.moves = []; S.online = null; S.result = null; S.flipped = false; }
   }
+  if (S.mode === "puzzle") { S.puz = Object.assign({ tier: 0, id: 0, solved: [] }, S.puz || {}); startB = PUZ() ? puzBoard(PUZ()) : null; S.flipped = false; }
   const imported = importFromHash();
   drawBoard(); rebuild();
   if (imported) { setView(S.moves.length); runAnalysis(); } else maybeAi();
