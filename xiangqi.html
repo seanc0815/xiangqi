@@ -1903,12 +1903,27 @@ $("btnHint").onclick = () => {
   if (!myTurn()) return;
   if (S.mode === "puzzle" && !S.puzOff && PUZ()) { const m = PUZ().l[S.moves.length]; if (m != null) { hint = m; drawPieces(); $("sub").textContent = "提示：" + notation(G.b, m); return; } }
   const my = token; $("btnHint").disabled = true; $("sub").textContent = "幫你想一下…";
+  if ((PIKA || pikaUrl()) && S.mode !== "online" && S.mode !== "puzzle" && !startB && !sandbox && view == null) {   // 跟電腦下：提示用家裡電腦的 Pikafish（最強）
+    const moves = S.moves.slice();
+    fetch((PIKA ? "" : pikaUrl()) + "/api/think", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fen: START_FEN, moves: moves.map(uciOf), ms: 2000, mode: "full" }) })
+      .then(r => r.json()).then(r => {
+        if (my !== token || !r.pick) throw 0;
+        const m = ofUci(r.pick); if (!E.legal(G.b.slice(), G.red).includes(m)) throw 0;
+        const c = (r.cands || [])[0];
+        hint = m; drawPieces(); renderPanel();
+        $("sub").textContent = "最強：" + notation(G.b, m) + (c ? (c.mate != null ? (c.mate > 0 ? `（${c.mate} 步殺）` : `（對方 ${-c.mate} 步殺）`) : `（${c.score >= 0 ? "+" : ""}${(c.score / 100).toFixed(1)}）`) : "");
+      }).catch(() => { if (my === token) jsHint(my); });
+    return;
+  }
+  jsHint(my);
+};
+function jsHint(my) {
   think(G.b.slice(), G.red, 1, r => {
     if (my !== token || !r || r.move == null) return;
     hint = r.move; drawPieces(); renderPanel();
     $("sub").textContent = "建議：" + notation(G.b, r.move);
   });
-};
+}
 
 $("btnCreate").onclick = createRoom;
 $("btnJoin").onclick = joinRoom;
