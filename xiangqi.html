@@ -160,7 +160,7 @@
     <p>中國象棋：兩個人同一個畫面輪流下、各用各的手機連線，或跟電腦下。</p>
     <nav class="switch" id="switch" aria-label="回到棋類首頁"><a href="./">← 全部棋類</a></nav>
     <button class="iconbtn" id="btnSound" title="音效開關" aria-pressed="true">🔊</button>
-    <button class="iconbtn" id="btnVoice" title="語音開關（報棋步、將軍、勝負）" aria-pressed="true">🗣️</button>
+    <button class="iconbtn" id="btnVoice" title="絕殺語音開關" aria-pressed="true">🗣️</button>
   </header>
 
   <div class="boardcol">
@@ -180,9 +180,9 @@
       <div class="big" id="endBig"></div>
       <div class="why" id="endWhy"></div>
       <div class="row">
-        <button class="btn primary" id="endReview">復盤</button>
+        <button class="btn primary" id="endAgain">再來一盤</button>
+        <button class="btn" id="endReview">復盤</button>
         <button class="btn" id="endSandbox">沙盤推演</button>
-        <button class="btn" id="endAgain">再來一盤</button>
       </div>
     </div>
     <div class="row rv" id="reviewBar" hidden>
@@ -317,7 +317,7 @@
         <li><b>長將、長捉</b>：同一個局面要第三次出現時，一直將軍（長將）或一直追著要吃同一顆子（長捉）的一方必須變招，不能再走那一步；雙方都只是閒著走就判和（不變作和）。</li>
         <li><b>和棋</b>：連續 60 回合沒有吃子；雙方都沒有能過河進攻的子；也可以提出求和、或認輸。</li>
         <li><b>電腦棋風</b>：搶攻型把子力往你的九宮壓；棄子型願意用子換攻勢；穩健型先顧好自己的帥。三種都會設局（故意送子，你吃了反而虧）和起疑（你送子時多算幾步再決定吃不吃）。「純算」就是沒有棋風、只算分數的原本電腦。</li>
-        <li><b>音效、語音</b>：右上角 🔊 是棋子的聲音，🗣️ 是語音（念每一步棋、將軍、絕殺、勝負），各自可以關。語音用的是手機或電腦內建的中文聲音，沒有的話就不會念。</li>
+        <li><b>音效、語音</b>：右上角 🔊 是棋子的聲音，🗣️ 是絕殺時的語音（喊出殺法，例如「天地炮，絕殺！」），各自可以關。</li>
         <li><b>復盤、沙盤推演</b>：下完一盤才有。復盤可以用 ◀ ▶ 或點棋譜看每一步；沙盤推演從復盤的任何一個局面開始，兩邊的棋子都由你動，看看換一種走法會怎樣，不會記進棋譜。</li>
       </ul>
     </details>
@@ -997,7 +997,7 @@ function renderPanel() {
   $("btnGiveUp").disabled = busy;
   $("btnDraw").disabled = busy;
   $("btnSound").setAttribute("aria-pressed", S.sound !== false); $("btnSound").textContent = S.sound !== false ? "🔊" : "🔇";
-  $("btnVoice").setAttribute("aria-pressed", S.voice !== false); $("btnVoice").hidden = !("speechSynthesis" in window);
+  $("btnVoice").setAttribute("aria-pressed", S.voice !== false);
   renderOnline();
 }
 function lastText(check) {
@@ -1125,10 +1125,8 @@ function stamp(kind, sub, bigText) {
   box.appendChild(d);
   if (kind === "check" || kind === "warn") setTimeout(() => d.remove(), 1700);
   else { svg.classList.remove("shake"); void svg.getBoundingClientRect(); svg.classList.add("shake"); }
+  if (kind === "mate" && voiceMate(bigText)) return;
   sfx(stampSound(kind));
-  const head = kind === "mate" ? (bigText ? (bigText.endsWith("殺") ? bigText : bigText + "絕殺") : "絕殺") : kind === "warn" ? (bigText || "長將") + "，請變招" : { check: "將軍", stale: "困斃", draw: "和棋", perp: "判負", resign: "認輸" }[kind] || "";
-  const tail = kind === "check" || kind === "warn" ? "" : (sub || "").replace(/^絕殺・/, "").replace(/・/g, "，");
-  say(tail && tail !== head ? head + "，" + tail : head);
 }
 function stampSound(kind) {
   if (kind === "check" || kind === "warn" || kind === "draw") return kind;
@@ -1223,7 +1221,7 @@ function play(m) {
     const before = G.b.slice(), note = notation(G.b, m), red = G.red, cap = E.make(G.b, m);
     G.hist.push({ m, cap, note, red, sev: severity(before, G.b, red) }); G.red = !G.red; G.keys.push(posKey(G.b, G.red));
     sel = -1; targets = []; hint = null;
-    sfx(capNow ? "cap" : "move"); sayMove(note); render(m % 100); announce();
+    sfx(capNow ? "cap" : "move"); render(m % 100); announce();
     return;
   }
   S.moves.push(m);
@@ -1232,7 +1230,7 @@ function play(m) {
   G.hist.push({ m, cap, note, red, sev: severity(before, G.b, red) }); G.red = !G.red;
   G.keys.push(posKey(G.b, G.red));
   sel = -1; targets = []; hint = null;
-  sfx(capNow ? "cap" : "move"); sayMove(note);
+  sfx(capNow ? "cap" : "move");
   render(m % 100); save(); announce();
   if (S.mode === "online") pushOnline({ moves: S.moves.slice() });
   else maybeAi();
@@ -1388,7 +1386,7 @@ function watch(code) {
       const extendsOne = moves.length === S.moves.length + 1 && S.moves.every((m, i) => m === moves[i]);
       S.moves = moves; save();
       rebuild(extendsOne ? moves[moves.length - 1] % 100 : undefined);
-      if (extendsOne) { const last = GF.hist[GF.hist.length - 1]; sfx(last.cap !== "." ? "cap" : "move"); sayMove(last.note); announce(); }   // 對手剛走的那一步
+      if (extendsOne) { sfx(GF.hist[GF.hist.length - 1].cap !== "." ? "cap" : "move"); announce(); }   // 對手剛走的那一步
     } else if (prevResult !== JSON.stringify(S.result)) {
       renderPanel();
       if (S.result && prevResult === "null") stamp(S.result.draw ? "draw" : "resign", S.result.draw ? S.result.why : winnerText(S.result));   // 對手認輸／雙方同意和棋
@@ -1724,35 +1722,30 @@ function sfx(kind) {
     }
   } catch (e) { }
 }
-addEventListener("pointerdown", () => { ac(); sayWarm(); }, { once: true, passive: true });   // 第一次碰畫面就把音訊、語音打開（iOS 要在手勢裡）
+addEventListener("pointerdown", () => { ac(); voiceUnlock(); }, { once: true, passive: true });   // 第一次碰畫面就把音訊、語音打開（iOS 要在手勢裡）
 $("btnSound").onclick = () => { S.sound = S.sound === false; save(); renderPanel(); if (S.sound) sfx("move"); };
-$("btnVoice").onclick = () => { S.voice = S.voice === false; save(); renderPanel(); if (S.voice) say("語音開啟", true); };
+$("btnVoice").onclick = () => { S.voice = S.voice === false; save(); renderPanel(); if (S.voice) { voiceUnlock(); voiceMate(null); } };
 
-/* ───────── 語音（2026-10-29）：報棋步、將軍、絕殺、勝負；用瀏覽器內建的中文聲音 ───────── */
-let voiceObj = null, voiceWarm = false;
-function pickVoice() {
-  if (!("speechSynthesis" in window)) return null;
-  const vs = speechSynthesis.getVoices();
-  if (!vs.length) return null;
-  const pref = ["zh-TW", "zh_TW", "zh-HK", "zh-CN", "zh"];
-  for (const p of pref) { const v = vs.find(v => (v.lang || "").replace("_", "-").toLowerCase().startsWith(p.toLowerCase()) && !/eSpeak/i.test(v.name)); if (v) return v; }
-  return null;
-}
-if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => { voiceObj = pickVoice(); };
-function sayWarm() { if (!("speechSynthesis" in window) || voiceWarm) return; voiceWarm = true; try { const u = new SpeechSynthesisUtterance(""); u.volume = 0; speechSynthesis.speak(u); } catch (e) { } }
-/* 棋譜念法：俥傌砲→車馬炮、全形數字→中文、進退平照字念 */
-const SAY_MAP = { "俥": "車", "傌": "馬", "砲": "炮", "炮": "炮", "仕": "士", "相": "象", "１": "一", "２": "二", "３": "三", "４": "四", "５": "五", "６": "六", "７": "七", "８": "八", "９": "九" };
-function sayMove(note) { say(note.replace(/./g, ch => SAY_MAP[ch] || ch)); }
-function say(text, now) {
-  if (!text || !("speechSynthesis" in window) || (S && S.voice === false)) return;
+/* ───────── 絕殺語音（2026-10-29，Gabi：只要絕殺、要中氣十足）：預錄的 mp3（sfx/mate_殺法.mp3；認不出殺法就 sfx/mate.mp3） ─────────
+   由 tools 以 edge-tts 的 zh-CN-YunjianNeural（運動播報男聲）產生；iOS 要在第一次手勢裡先播過一次才准自動出聲 */
+const VOICE_NAMES = ["拔簧馬", "重炮", "馬後炮", "天地炮", "悶宮", "夾車炮", "鐵門栓", "大膽穿心", "對面笑", "雙車錯", "二鬼拍門", "雙馬飲泉", "臥槽馬", "掛角馬", "釣魚馬", "高釣馬", "海底撈月", "空頭炮", "悶殺", "老兵搜山", "雙炮", "單車殺", "雙車殺", "單馬殺", "雙馬殺", "單炮殺", "單兵殺", "雙兵殺", "車馬殺", "車炮殺", "馬炮殺", "車兵殺", "馬兵殺", "炮兵殺", "車馬炮殺"];
+let voiceEl = null;
+function voiceUnlock() {
+  if (voiceEl) return;
   try {
-    if (now) speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    if (!voiceObj) voiceObj = pickVoice();
-    if (voiceObj) u.voice = voiceObj;
-    u.lang = (voiceObj && voiceObj.lang) || "zh-TW"; u.rate = 1.05; u.pitch = 1;
-    speechSynthesis.speak(u);
-  } catch (e) { }
+    voiceEl = new Audio("sfx/mate.mp3"); voiceEl.preload = "auto"; voiceEl.muted = true;
+    const p = voiceEl.play(); if (p && p.then) p.then(() => { voiceEl.pause(); voiceEl.currentTime = 0; voiceEl.muted = false; }).catch(() => { voiceEl.muted = false; });
+  } catch (e) { voiceEl = null; }
+}
+function voiceMate(name) {
+  if (S && S.voice === false) return false;
+  try {
+    if (!voiceEl) voiceEl = new Audio();
+    voiceEl.muted = false;
+    voiceEl.src = name && VOICE_NAMES.includes(name) ? `sfx/mate_${name}.mp3` : "sfx/mate.mp3";
+    voiceEl.volume = 1; const p = voiceEl.play(); if (p && p.catch) p.catch(() => { });
+    return true;
+  } catch (e) { return false; }
 }
 
 /* ───────── 啟動 ───────── */
