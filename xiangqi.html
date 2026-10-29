@@ -69,6 +69,7 @@
   .stamp.check { animation: stampIn .42s cubic-bezier(.2,.9,.3,1.25) both, fadeAway .4s ease-in 1.15s forwards; }
   .prewarm { position: absolute; left: -9999px; top: 0; font-family: var(--f-display); font-size: 40px; opacity: 0; pointer-events: none; }
   .stamp.mate .big { font-size: clamp(84px, 23vw, 150px); }
+  .stamp.mate .big.long { font-size: clamp(56px, 15vw, 104px); white-space: nowrap; }
   .stamp.stale .big { color: var(--black-side); }
   @keyframes stampIn { 0% { opacity: 0; transform: scale(2.3) rotate(-16deg); } 60% { opacity: 1; transform: scale(.93) rotate(-5deg); }
     80% { transform: scale(1.04) rotate(-6deg); } 100% { opacity: 1; transform: scale(1) rotate(-6deg); } }
@@ -814,6 +815,98 @@ function render(landed) {
   if (!gameOver() || view != null) { const f = $("fx").querySelector(".mate, .stale"); if (f) f.remove(); }   // 悔棋、新局、復盤 → 收掉絕殺章
 }
 
+/* 絕殺時辨認殺法（名稱照維基教科書《中國象棋／基本殺法列表》）；認不出來就回 null，印章照舊寫「絕殺」 */
+function mateName(b, red, last) {
+  const A = !red, k = b.indexOf(red ? "K" : "k"); if (k < 0) return null;
+  const kr = (k / 9) | 0, kc = k % 9, rel = r => red ? 9 - r : r;   // rel：0＝被將死那方的底線
+  const T = i => b[i].toLowerCase(), mine = i => b[i] !== "." && E.isRed(b[i]) === A, his = i => b[i] !== "." && E.isRed(b[i]) === red;
+  const at = (r, c) => r * 9 + c, RC = i => [(i / 9) | 0, i % 9];
+  const ak = b.indexOf(A ? "K" : "k");
+  const hitters = (bb, sq) => {                                     // 攻擊 sq 的攻方棋子（sq 上放的是守方將）
+    const out = new Set();
+    for (const m of E.gen(bb, A, true)) if (m % 100 === sq) out.add((m / 100) | 0);
+    return out;
+  };
+  const checkers = [...hitters(b, k)];
+  if (!checkers.length) return null;
+  const help = new Set(checkers); let face = false, smother = true;
+  const pal = r => red ? r >= 7 && r <= 9 : r >= 0 && r <= 2;
+  for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+    const r = kr + dr, c = kc + dc;
+    if (r < 0 || r > 9 || c < 3 || c > 5 || !pal(r)) continue;
+    const j = at(r, c);
+    if (his(j)) continue;                                           // 被自己的子堵住
+    smother = false;
+    const bb = b.slice(); bb[j] = bb[k]; bb[k] = ".";
+    for (const i of hitters(bb, j)) help.add(i);
+    if (ak % 9 === c) {                                             // 將帥照面
+      let clear = true; const [ar] = RC(ak);
+      for (let rr = Math.min(ar, r) + 1; rr < Math.max(ar, r); rr++) if (bb[at(rr, c)] !== ".") { clear = false; break; }
+      if (clear) face = true;
+    }
+  }
+  const H = [...help], of = t => H.filter(i => T(i) === t);
+  const R = of("r"), N = of("n"), C = of("c"), P = of("p");
+  const chk = t => checkers.filter(i => T(i) === t);
+  const between = (i, j) => {                                       // 同一直線上 i、j 之間的棋子
+    const [r1, c1] = RC(i), [r2, c2] = RC(j), out = [];
+    if (r1 !== r2 && c1 !== c2) return null;
+    const dr = Math.sign(r2 - r1), dc = Math.sign(c2 - c1);
+    for (let r = r1 + dr, c = c1 + dc; r !== r2 || c !== c2; r += dr, c += dc) if (b[at(r, c)] !== ".") out.push(at(r, c));
+    return out;
+  };
+  const lf = last ? (last.m / 100) | 0 : -1, lt = last ? last.m % 100 : -1;
+  // 2. 拔簧馬：移開絆馬腿的子，馬抽出來將軍
+  for (const n of chk("n")) {
+    const [nr, nc] = RC(n), dr = kr - nr, dc = kc - nc;
+    const leg = at(nr + (Math.abs(dr) === 2 ? dr / 2 : 0), nc + (Math.abs(dc) === 2 ? dc / 2 : 0));
+    if (leg === lf && lt !== n) return "拔簧馬";
+  }
+  // 3. 重炮／馬後炮：看將軍那隻炮的炮架
+  for (const c of chk("c")) {
+    const s = between(c, k); if (!s || s.length !== 1) continue;
+    if (mine(s[0]) && T(s[0]) === "c") return "重炮";
+    if (mine(s[0]) && T(s[0]) === "n") return "馬後炮";
+  }
+  // 4. 天地炮：中炮＋沉底炮
+  const allC = b.map((q, i) => i).filter(i => mine(i) && T(i) === "c");
+  if (chk("c").length && rel(kr) === 0 && kc === 4 && allC.some(i => i % 9 === 4) && allC.some(i => RC(i)[0] === kr)) return "天地炮";
+  // 悶宮：單炮隔著對方自己的士將死還在原位的將，被底士和中心士擋住
+  const nb = [k - 1, k + 1, red ? k - 9 : k + 9].filter(j => his(j) && T(j) === "a").length;
+  if (rel(kr) === 0 && kc === 4 && nb >= 2 && chk("c").some(c => { const s = between(c, k); return s && s.length === 1 && his(s[0]); })) return "悶宮";
+  // 5. 夾車炮：雙炮並線配合車
+  if (C.length >= 2 && R.length && (RC(C[0])[0] === RC(C[1])[0] || C[0] % 9 === C[1] % 9)) return "夾車炮";
+  // 6. 鐵門栓：中炮控中路，車或兵在將旁邊封門將軍
+  if (rel(kr) === 0 && kc === 4 && b.some((q, i) => mine(i) && T(i) === "c" && i % 9 === 4) &&
+      checkers.some(i => (T(i) === "r" || T(i) === "p") && Math.abs(i - k) === 1)) return "鐵門栓";
+  // 7. 大膽穿心：車硬吃中心士將死
+  if (last && lt === at(red ? 8 : 1, 4) && last.cap && last.cap.toLowerCase() === "a" && T(lt) === "r") return "大膽穿心";
+  // 8. 對面笑：靠將帥不能照面
+  if (face) return "對面笑";
+  if (R.length >= 2 && chk("r").length) return "雙車錯";
+  if (P.length >= 2 && P.some(i => i % 9 === 3 && pal(RC(i)[0])) && P.some(i => i % 9 === 5 && pal(RC(i)[0]))) return "二鬼拍門";
+  if (N.length >= 2) return "雙馬飲泉";
+  // 9. 馬的位置：先看將軍的馬，再看幫忙控制的馬
+  for (const n of [...chk("n"), ...N]) {
+    const r = rel(RC(n)[0]), c = n % 9;
+    if (r === 1 && (c === 2 || c === 6)) return "臥槽馬";
+    if (r === 2 && (c === 3 || c === 5)) return "掛角馬";
+    if (r === 2 && (c === 2 || c === 6)) return "釣魚馬";
+    if (r === 3 && (c === 2 || c === 6)) return "高釣馬";
+  }
+  // 10. 海底撈月：從將背後（底線那一側）將軍
+  if (rel(kr) > 0 && checkers.some(i => i % 9 === kc && rel(RC(i)[0]) < rel(kr) && (T(i) === "r" || T(i) === "c"))) return "海底撈月";
+  // 11. 空頭炮：炮跟將中間沒有子
+  if (b.some((q, i) => mine(i) && T(i) === "c" && i % 9 === kc && (() => { const s = between(i, k); return s && (s.length === 0 || (s.length === 1 && checkers.includes(s[0]) && T(s[0]) !== "c")); })())) return "空頭炮";
+  if (smother) return "悶殺";
+  if (P.some(i => rel(RC(i)[0]) === 0)) return "老兵搜山";
+  if (C.length >= 2) return "雙炮";
+  // 都不是：用參與的子命名（車馬炮兵）
+  const kinds = ["r", "n", "c", "p"].filter(t => of(t).length), ZH = { r: "車", n: "馬", c: "炮", p: "兵" };
+  if (kinds.length === 1) return (of(kinds[0]).length > 1 ? "雙" : "單") + ZH[kinds[0]] + "殺";
+  return kinds.slice(0, 3).map(t => ZH[t]).join("") + "殺";
+}
+
 /* 將軍／絕殺／困斃：棋盤中央蓋一個印章 */
 function winnerText(over) {
   if (over.draw) return over.why;
@@ -827,7 +920,7 @@ function stamp(kind, sub, bigText) {
   const d = document.createElement("div");
   d.className = "stamp " + (kind === "draw" ? "stale" : kind === "perp" || kind === "resign" ? "mate" : kind === "warn" ? "check" : kind);
   const big = document.createElement("span");
-  big.className = "big";
+  big.className = "big" + (bigText && bigText.length > 2 ? " long" : "");
   big.textContent = bigText || { check: "將軍", mate: "絕殺", stale: "困斃", draw: "和棋", perp: "判負", warn: "長將", resign: "認輸" }[kind];
   d.appendChild(big);
   if (sub) { const s = document.createElement("span"); s.className = "small"; s.textContent = sub; d.appendChild(s); }
@@ -837,7 +930,12 @@ function stamp(kind, sub, bigText) {
 }
 function announce() {
   const over = gameOver();
-  if (over && !S.result) stamp(over.kind || (E.inCheck(G.b, G.red) ? "mate" : "stale"), over.kind === "perp" ? over.why + "・" + winnerText(over) : winnerText(over));
+  if (over && !S.result) {
+    const kind = over.kind || (E.inCheck(G.b, G.red) ? "mate" : "stale");
+    let name = null;
+    if (kind === "mate") try { name = mateName(G.b, G.red, G.hist[G.hist.length - 1]); } catch (e) { }
+    stamp(kind, kind === "perp" ? over.why + "・" + winnerText(over) : name ? "絕殺・" + winnerText(over) : winnerText(over), name);
+  }
   else if (!over && E.inCheck(G.b, G.red)) stamp("check");
 }
 
