@@ -972,6 +972,7 @@ function renderPanel() {
   else if (S.mode === "puzzle") { msg = PUZ() ? puzTitle(PUZ()) : "殘局"; sub = G.red ? (check ? "被將軍了" : "輪到你（紅）：找出殺法") : "黑方應…"; }
   else { msg = `${side}走棋`; sub = lastText(check); }
   $("msg").textContent = msg; $("sub").textContent = sub;
+  if (typeof pkSay === "function") pkSay();                        // 即時輔助：建議直接寫在這一行（10-30 Gabi）
 
   const capBy = { true: [], false: [] };
   for (const h of G.hist) if (h.cap !== ".") capBy[h.red].push(h.cap);
@@ -1957,6 +1958,7 @@ $("btnHint").onclick = () => {
   if (hintLong) { hintLong = false; return; }          // 剛剛是長按：已經用 Pikafish 想了
   if (!myTurn()) return;
   if (S.mode === "puzzle" && !S.puzOff && PUZ()) { const m = PUZ().l[S.moves.length]; if (m != null) { hint = m; drawPieces(); $("sub").textContent = "提示：" + notation(G.b, m); return; } }
+  if (pkOn() && pkMove != null && pkKey === S.moves.join(",")) { hint = pkMove; drawPieces(); pkSay(); return; }   // 即時輔助開著：提示＝同一步 Pikafish
   const my = token; $("btnHint").disabled = true; $("sub").textContent = "幫你想一下…";
   jsHint(my);
 };
@@ -1971,7 +1973,7 @@ $("btnHint").addEventListener("pointerdown", () => {
    長按「提示」2 秒＝開／關（只記在這支手機）。開著時，每次輪到你，自動問家裡電腦的 Pikafish（全力 1.5 秒），
    棋盤上用很淡的小點標「動哪顆」、細圈標「走到哪」。家裡電腦只有你的 Tailscale 連得到，別人的手機開了也不會有東西。
    開／關的回饋只有一個字：「好。」＝開、「好」＝關。 */
-let pkKey = null, pkMove = null;
+var pkKey = null, pkMove = null;                    // var：初始畫面 renderPanel 比這行早跑
 var pkOk = false;                                    // 最近一次真的從家裡電腦拿到建議 → 「提示」按鈕多一個句號（暗號：有在用）
 function pkOn() { try { return localStorage.getItem("xiangqi-pk") === "1"; } catch (e) { return false; } }
 function pkToggle() {
@@ -1989,8 +1991,12 @@ function pkTick() {
     .then(r => r.json()).then(r => {
       if (pkKey !== key || S.moves.join(",") !== key || !r.pick) return;
       const m = ofUci(r.pick); if (!E.legal(G.b.slice(), G.red).includes(m)) return;
-      pkMove = m; pkOk = true; drawPieces(); renderHintLabel();
+      pkMove = m; pkOk = true; drawPieces(); renderHintLabel(); pkSay();
     }).catch(() => { if (pkKey === key) pkKey = null; pkOk = false; renderHintLabel(); });   // 連不到：下次 render 再試
+}
+function pkSay() {                                   // 輪到你、Pikafish 算好了 → 狀態第二行寫「建議：炮二平五。」（句號＝Pikafish）
+  if (!pkOn() || pkMove == null || pkKey !== S.moves.join(",") || sandbox || view != null || !myTurn()) return;
+  $("sub").textContent = "建議：" + notation(G.b, pkMove) + "。";
 }
 function renderHintLabel() {
   const t = pkOn() && pkOk ? "提示。" : "提示";
