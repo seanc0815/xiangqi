@@ -1,0 +1,314 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="棋盤小館"><meta name="theme-color" content="#131917"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon.png"><link rel="icon" href="icon.png"><style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style><script>if('serviceWorker' in navigator&&(location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname)))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))</script><title>心有靈犀</title>
+<style>
+  /* 心有靈犀（2026-10-30，Gabi：「同時說一個詞，給思考時間，再同時說，直到說的詞一樣」） */
+  :root {
+    --ground: #e7ece4; --panel: #f5f7f2; --ink: #1d2723; --muted: #5d6b64; --rule: #cbd4cb;
+    --jade: #2e7a67; --jade-soft: rgba(46, 122, 103, .16); --accent: #b0261d; --p0: #b0261d; --p1: #2e5fa8; --gold: #b8860b;
+    --f-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #131917; --panel: #1b2320; --ink: #e2e9e4; --muted: #95a59d; --rule: #2b3732;
+      --jade: #5fb59d; --jade-soft: rgba(95, 181, 157, .18); --accent: #e0574b; --p0: #e0574b; --p1: #6b9be0; --gold: #e0b44a; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --ground: #131917; --panel: #1b2320; --ink: #e2e9e4; --muted: #95a59d; --rule: #2b3732;
+    --jade: #5fb59d; --jade-soft: rgba(95, 181, 157, .18); --accent: #e0574b; --p0: #e0574b; --p1: #6b9be0; --gold: #e0b44a; color-scheme: dark; }
+  [hidden] { display: none !important; }
+  html, body { background: var(--ground); color: var(--ink); }
+  body { font-family: var(--f-body); font-size: 15px; line-height: 1.55; padding-inline: 16px; padding-block: 18px 28px; margin: 0; }
+  .wrap { max-width: 1000px; margin: 0 auto; display: grid; gap: 22px; grid-template-columns: minmax(0, 560px) minmax(0, 340px); justify-content: center; align-items: start; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 560px); } }
+  header.top { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  header.top h1 { font-weight: 900; font-size: clamp(30px, 6vw, 40px); line-height: 1; margin: 0; letter-spacing: .06em; }
+  header.top p { margin: 0; color: var(--muted); font-size: 13px; flex: 1 1 220px; }
+  a.home { margin-left: auto; color: var(--muted); text-decoration: none; font-size: 14px; border: 1px solid var(--rule); border-radius: 999px; padding: 5px 14px; }
+
+  .stage { position: relative; background: var(--panel); border: 1px solid var(--rule); border-radius: 14px; padding: 16px; display: grid; gap: 14px; min-height: 260px; align-content: start; }
+  .play { display: grid; gap: 10px; justify-items: center; text-align: center; padding: 8px 0 4px; }
+  .play .big { font-size: 56px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; color: var(--jade); }
+  .play .big.low { color: var(--accent); }
+  .play .hintline { color: var(--muted); font-size: 14px; min-height: 1.4em; }
+  .entry { display: flex; gap: 8px; width: 100%; max-width: 380px; }
+  .entry .btn { flex: none; padding: 8px 16px; font-size: 16px; }
+  .entry input { flex: 1; min-width: 0; width: 0; font: inherit; font-size: 22px; text-align: center; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--rule); background: var(--ground); color: var(--ink); }
+  .entry input.secret { -webkit-text-security: disc; }
+  .entry input:disabled { opacity: .5; }
+  .pair { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; width: 100%; }
+  .card { border-radius: 12px; border: 2px solid var(--rule); padding: 14px 8px; font-size: clamp(22px, 6vw, 30px); font-weight: 800; text-align: center; min-height: 1.4em; word-break: break-all; background: var(--ground); }
+  .card.p0 { border-color: var(--p0); } .card.p1 { border-color: var(--p1); }
+  .card.hide { color: var(--muted); font-size: 16px; font-weight: 500; }
+  .card.flip { animation: flip .45s ease both; }
+  @keyframes flip { 0% { transform: rotateX(90deg); opacity: 0; } 100% { transform: rotateX(0); opacity: 1; } }
+  .pair .vs { color: var(--muted); font-size: 13px; }
+  .who { font-size: 12px; color: var(--muted); }
+  .hist { display: grid; gap: 6px; }
+  .hist .row { display: grid; grid-template-columns: 2.4em 1fr 1fr; gap: 8px; align-items: center; font-size: 15px; padding: 4px 6px; border-radius: 8px; }
+  .hist .row:nth-child(odd) { background: var(--jade-soft); }
+  .hist .row .n { color: var(--muted); font-size: 12px; }
+  .hist .row .w0 { color: var(--p0); font-weight: 700; } .hist .row .w1 { color: var(--p1); font-weight: 700; }
+  .hist .row.win { outline: 2px solid var(--gold); }
+  .fx { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  .stamp { display: grid; justify-items: center; gap: 6px; transform: rotate(-6deg); color: var(--gold); animation: stampIn .42s cubic-bezier(.2,.9,.3,1.25) both; }
+  .stamp .big { font-weight: 900; font-size: clamp(48px, 13vw, 88px); line-height: 1; letter-spacing: .08em; text-shadow: 3px 0 0 #fff6ea, -3px 0 0 #fff6ea, 0 3px 0 #fff6ea, 0 -3px 0 #fff6ea, 0 8px 18px rgba(0,0,0,.45); }
+  .stamp .small { font-weight: 700; font-size: 15px; color: #fff6ea; background: rgba(27, 29, 28, .8); padding: 3px 14px; border-radius: 999px; }
+  @keyframes stampIn { 0% { opacity: 0; transform: scale(2.2) rotate(-16deg); } 60% { opacity: 1; transform: scale(.94) rotate(-5deg); } 100% { opacity: 1; transform: scale(1) rotate(-6deg); } }
+  @media (prefers-reduced-motion: reduce) { .stamp, .card.flip { animation: none; } }
+
+  aside.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; display: grid; gap: 16px; min-width: 0; }
+  .status .msg { font-weight: 700; font-size: 17px; } .status .sub { color: var(--muted); font-size: 13px; }
+  .group { display: grid; gap: 6px; } .label { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+  .note { font-size: 12px; color: var(--muted); }
+  .seg { display: flex; border: 1px solid var(--rule); border-radius: 9px; overflow: hidden; }
+  .seg button { flex: 1; background: transparent; border: 0; color: var(--muted); font: inherit; font-size: 14px; padding: 7px 0; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--rule); }
+  .seg button[aria-pressed="true"] { background: var(--jade-soft); color: var(--ink); font-weight: 700; }
+  .seg button:disabled { opacity: .5; cursor: default; }
+  .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .btn { font: inherit; font-size: 14px; padding: 8px 6px; border-radius: 9px; border: 1px solid var(--rule); background: var(--ground); color: var(--ink); cursor: pointer; }
+  .btn.primary { background: var(--jade); border-color: var(--jade); color: #fff; font-weight: 700; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px solid var(--jade); outline-offset: 2px; }
+  .confirm { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+  .confirm .btn { font-size: 13px; padding: 4px 10px; }
+  .score { display: flex; gap: 14px; font-size: 14px; color: var(--muted); flex-wrap: wrap; } .score b { color: var(--ink); }
+  details.rules { border-top: 1px solid var(--rule); padding-top: 10px; font-size: 14px; }
+  details.rules summary { cursor: pointer; font-weight: 700; }
+  details.rules li { margin: 4px 0; } details.rules ul { padding-left: 1.2em; margin: 8px 0; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>心有靈犀</h1>
+    <p>兩個人同時說一個詞，再一起想一個能連起兩個詞的詞，直到說出同一個詞。</p>
+    <a class="home" href="./">← 全部棋類</a>
+  </header>
+  <div class="stage">
+    <div class="play" id="play">
+      <div class="big" id="big"></div>
+      <div class="hintline" id="hintline"></div>
+      <div class="pair" id="pair" hidden>
+        <div><div class="who" id="who0"></div><div class="card p0" id="card0"></div></div>
+        <div class="vs">vs</div>
+        <div><div class="who" id="who1"></div><div class="card p1" id="card1"></div></div>
+      </div>
+      <form class="entry" id="entry" autocomplete="off">
+        <input id="word" maxlength="16" placeholder="輸入一個詞" enterkeyhint="send" aria-label="你的詞">
+        <button class="btn primary" id="btnSend" type="submit">說！</button>
+      </form>
+    </div>
+    <div class="hist" id="hist"></div>
+    <div class="fx" id="fx" aria-live="assertive"></div>
+  </div>
+  <aside class="panel">
+    <div class="status" aria-live="polite"><div class="msg" id="msg"></div><div class="sub" id="sub"></div></div>
+    <div class="score" id="score"></div>
+    <div class="group"><span class="label">玩法</span>
+      <div class="seg" id="modeSeg"><button data-mode="local">雙人同機</button><button data-mode="online">連線對戰</button></div></div>
+    <div class="group" id="netBox" hidden></div>
+    <div class="group"><span class="label">每輪思考時間</span>
+      <div class="seg" id="thinkSeg"><button data-t="0">不限</button><button data-t="10">10 秒</button><button data-t="20">20 秒</button><button data-t="30">30 秒</button></div>
+      <span class="note" id="thinkNote">時間到時，你已經打好的詞會自動送出。連線時下一局才會換成新的設定。</span></div>
+    <div class="actions">
+      <button class="btn primary" id="btnNew">新局</button><button class="btn" id="btnGiveUp">放棄這局</button>
+    </div>
+    <div class="confirm" id="confirm" hidden><span id="confirmText"></span><button class="btn primary" id="confirmYes">確定</button><button class="btn" id="confirmNo">取消</button></div>
+    <details class="rules"><summary>玩法說明</summary>
+      <ul>
+        <li>兩個人<b>同時</b>各說一個詞（自己打，對方看不到），兩個人都送出後一起翻開。</li>
+        <li>不一樣就再想一輪：試著想一個能把<b>剛剛那兩個詞</b>連起來的詞，例如「海」和「火」→ 都想到「熱帶」或「夕陽」？</li>
+        <li>一直到兩個人說出<b>同一個詞</b>就成功，輪數越少越厲害。</li>
+        <li>說過的詞（不管誰說的）不能再說。</li>
+        <li>有設思考時間的話，翻開後開始倒數；時間到，已經打好的詞會自動送出。</li>
+        <li>雙人同機：玩家一先打（字會遮起來），交給玩家二打，兩個都好了才翻開。</li>
+      </ul>
+    </details>
+  </aside>
+</div>
+
+<script src="net.js"></script>
+<script src="ui.js"></script>
+<script>
+const STORE = "lingxi-v1";
+const $ = id => document.getElementById(id);
+let S = null, NETP = null, pending = null, revealAt = { r: 0, t: 0 }, shownR = 0, autoSent = 0;
+const NAMES = ["玩家一", "玩家二"];
+function defaults() { return { mode: "local", think: 20, moves: [], cfg: { seed: 1, think: 20 }, over: null, tally: { games: 0, rounds: 0, best: null } }; }
+function save() { try { localStorage.setItem(STORE, JSON.stringify(Object.assign({}, S, { over: S.over }))); } catch (e) { } }
+const norm = w => String(w || "").normalize("NFKC").replace(/[\s\p{P}\p{S}]/gu, "").toLowerCase();
+
+/* 局面：每一輪兩個人各一個詞 */
+function rounds() {
+  const by = {};
+  for (const m of S.moves) (by[m.r] = by[m.r] || [null, null])[m.s] = m.w;
+  const out = [];
+  for (let r = 1; by[r]; r++) out.push({ r, w: by[r] });
+  return out;
+}
+function state() {
+  const rs = rounds();
+  const done = rs.filter(x => x.w[0] != null && x.w[1] != null);
+  const win = done.find(x => norm(x.w[0]) === norm(x.w[1]));
+  const cur = win ? null : (rs.find(x => x.w[0] == null || x.w[1] == null) || { r: done.length + 1, w: [null, null] });
+  return { rs, done, win, cur };
+}
+const thinkSecs = () => (S.mode === "online" ? (S.cfg && S.cfg.think) || 0 : S.think);
+const me = () => S.mode === "online" ? (NETP && NETP.mySeat()) : null;
+function used(w) { const n = norm(w); return state().done.some(x => norm(x.w[0]) === n || norm(x.w[1]) === n); }   // 只算已經翻開的輪：同一輪兩個人一樣正是要贏的
+
+/* 送出一個詞 */
+function send(word, auto) {
+  const st = state(); if (!st.cur || S.over) return;
+  const w = String(word || "").trim();
+  if (!w) { if (!auto) hintMsg("先打一個詞"); return; }
+  if (norm(w) === "") { if (!auto) hintMsg("要有字"); return; }
+  if (used(w)) { if (!auto) hintMsg("「" + w + "」說過了，換一個"); return; }
+  let seat;
+  if (S.mode === "online") {
+    seat = me(); if (seat == null || !NETP.connected()) { hintMsg("還沒連上對手"); return; }
+    if (st.cur.w[seat] != null) return;
+  } else seat = st.cur.w[0] == null ? 0 : 1;
+  S.moves.push({ r: st.cur.r, s: seat, w });
+  $("word").value = "";
+  after();
+  if (S.mode === "online" && NETP) NETP.push();
+}
+function after() {
+  const st = state();
+  if (st.win && !S.over) {
+    S.over = { win: true, rounds: st.win.r, word: st.win.w[0] };
+    const t = S.tally; t.games++; t.rounds += st.win.r; t.best = t.best == null ? st.win.r : Math.min(t.best, st.win.r);
+    stamp("心有靈犀", `第 ${st.win.r} 輪・都說「${st.win.w[0]}」`);
+  }
+  save(); render();
+}
+function stamp(big, small) {
+  $("fx").innerHTML = `<div class="stamp"><span class="big"></span>${small ? '<span class="small"></span>' : ""}</div>`;
+  $("fx").querySelector(".big").textContent = big; if (small) $("fx").querySelector(".small").textContent = small;
+}
+let hintTimer = 0;
+function hintMsg(t) { $("hintline").textContent = t; clearTimeout(hintTimer); hintTimer = setTimeout(render, 1800); }
+
+/* 畫面 */
+function render() {
+  const st = state(), seat = me(), online = S.mode === "online", act = online && NETP && NETP.active();
+  document.querySelectorAll("#modeSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === S.mode));
+  const tv = online ? ((S.cfg && S.cfg.think) || 0) : S.think;
+  document.querySelectorAll("#thinkSeg button").forEach(b => b.setAttribute("aria-pressed", +b.dataset.t === (online ? S.think : tv)));
+  $("netBox").hidden = !online;
+  const names = online && seat != null ? [seat === 0 ? "你" : "對手", seat === 1 ? "你" : "對手"] : NAMES;
+  $("who0").textContent = names[0]; $("who1").textContent = names[1];
+
+  // 歷史
+  $("hist").innerHTML = st.done.slice().reverse().map(x => `<div class="row${st.win && st.win.r === x.r ? " win" : ""}"><span class="n">第 ${x.r} 輪</span><span class="w0"></span><span class="w1"></span></div>`).join("");
+  st.done.slice().reverse().forEach((x, i) => { const row = $("hist").children[i]; row.querySelector(".w0").textContent = x.w[0]; row.querySelector(".w1").textContent = x.w[1]; });
+
+  // 最後翻開的那一輪
+  const last = st.done[st.done.length - 1];
+  $("pair").hidden = !last;
+  if (last) {
+    $("card0").textContent = last.w[0]; $("card1").textContent = last.w[1];
+    if (last.r > shownR) { shownR = last.r; for (const c of [$("card0"), $("card1")]) { c.classList.remove("flip"); void c.offsetWidth; c.classList.add("flip"); } revealAt = { r: last.r, t: Date.now() }; }
+  }
+  if (!last) revealAt = { r: 0, t: revealAt.r === 0 && revealAt.t ? revealAt.t : Date.now() };
+
+  // 狀態與輸入
+  let msg = "", sub = "", canType = false, secret = false;
+  if (S.over && !S.over.win) { msg = "這局放棄了"; sub = "按「新局」再來"; }
+  else if (S.over) { msg = `成功！第 ${S.over.rounds} 輪`; sub = `兩個人都說「${S.over.word}」`; }
+  else if (online && !act) { msg = "連線對戰：開房間，或輸入對方的房號"; }
+  else if (online && !NETP.connected()) { msg = "等對手連線…"; if (!st.done.length) revealAt.t = Date.now(); }   // 第一輪等兩個人都到了才開始倒數
+  else if (online) {
+    const mine = st.cur.w[seat], theirs = st.cur.w[1 - seat];
+    if (mine == null) { msg = `第 ${st.cur.r} 輪：說一個詞`; sub = theirs != null ? "對方已經說好了" : st.cur.r === 1 ? "隨便一個詞都可以" : "想一個能連起上面兩個詞的詞"; canType = true; }
+    else { msg = "等對方說…"; sub = `你說了「${mine}」`; }
+  } else {
+    const who = st.cur.w[0] == null ? 0 : 1;
+    msg = `第 ${st.cur.r} 輪：${NAMES[who]}說一個詞`; sub = who === 1 ? "玩家一已經說好了（字是遮起來的）" : st.cur.r === 1 ? "隨便一個詞都可以；打完交給玩家二" : "想一個能連起上面兩個詞的詞";
+    canType = true; secret = true;
+  }
+  $("msg").textContent = msg; $("sub").textContent = sub;
+  $("entry").hidden = !canType; $("word").classList.toggle("secret", secret);
+  $("btnGiveUp").disabled = !!S.over || !S.moves.length || (online && !act);
+  const t = S.tally;
+  $("score").innerHTML = `成功 <b>${t.games}</b> 局` + (t.games ? `　平均 <b>${(t.rounds / t.games).toFixed(1)}</b> 輪　最快 <b>${t.best}</b> 輪` : "");
+  tick();
+}
+/* 思考倒數：翻開那一刻起算；時間到把打好的詞送出 */
+function tick() {
+  const st = state(), lim = thinkSecs();
+  const typing = !$("entry").hidden;
+  if (!lim || S.over || !typing || !st.cur) { $("big").textContent = ""; $("big").classList.remove("low"); if (!$("hintline").dataset.keep) $("hintline").textContent = S.over ? "" : typing && !lim ? "想好了就按「說！」" : ""; return; }
+  const left = Math.ceil(lim - (Date.now() - revealAt.t) / 1000);
+  $("big").textContent = Math.max(0, left); $("big").classList.toggle("low", left <= 3);
+  $("hintline").textContent = left > 0 ? "想一想，時間到會自動送出" : "時間到！";
+  if (left <= 0 && autoSent !== st.cur.r * 10 + (S.mode === "online" ? me() : st.cur.w[0] == null ? 0 : 1)) {
+    autoSent = st.cur.r * 10 + (S.mode === "online" ? me() : st.cur.w[0] == null ? 0 : 1);
+    if (S.mode === "online" && $("word").value.trim()) send($("word").value, true);
+  }
+}
+setInterval(() => { if (!$("entry").hidden) tick(); }, 250);
+
+$("entry").onsubmit = e => { e.preventDefault(); send($("word").value); setTimeout(() => $("word").focus(), 50); };
+function ask(text, yes) { pending = yes; $("confirmText").textContent = text; $("confirm").hidden = false; }
+$("confirmYes").onclick = () => { $("confirm").hidden = true; const f = pending; pending = null; if (f) f(); };
+$("confirmNo").onclick = () => { $("confirm").hidden = true; pending = null; };
+function newGame() { S.moves = []; S.over = null; shownR = 0; revealAt = { r: 0, t: Date.now() }; autoSent = 0; $("fx").innerHTML = ""; $("word").value = ""; save(); render(); }
+$("btnNew").onclick = () => {
+  if (S.mode === "online") { if (NETP.active()) ask("跟對方要求重新開一局？", () => NETP.request("new")); return; }
+  if (S.moves.length && !S.over) ask("放棄這局、重新開始？", newGame); else newGame();
+};
+$("btnGiveUp").onclick = () => {
+  if (S.over || !S.moves.length) return;
+  if (S.mode === "online") { if (NETP.active()) ask("放棄這局？", () => NETP.resign()); return; }
+  ask("放棄這局？", () => { S.over = { win: false }; save(); render(); });
+};
+document.querySelectorAll("#modeSeg button").forEach(b => b.onclick = () => {
+  if (b.dataset.mode === S.mode) return;
+  if (S.mode === "online" && NETP && NETP.active()) NETP.leave();
+  S.mode = b.dataset.mode; newGame();
+});
+document.querySelectorAll("#thinkSeg button").forEach(b => b.onclick = () => { S.think = +b.dataset.t; if (S.mode !== "online") revealAt.t = Date.now(); save(); render(); });
+
+/* 連線：moves = 每輪每人一個詞；兩邊同時送可能互相蓋掉 → 合併，少了的再補送 */
+let known = { seed: null, m: {} };
+function mergeMoves(list) {
+  if (known.seed !== S.cfg.seed) known = { seed: S.cfg.seed, m: {} };
+  for (const x of list) known.m[x.r + ":" + x.s] = known.m[x.r + ":" + x.s] || x;
+  return Object.values(known.m).sort((a, b) => a.r - b.r || a.s - b.s);
+}
+function onlineApply(st, remote) {
+  const cfg = st.cfg || S.cfg || { seed: 1, think: 20 };
+  if (!S.cfg || cfg.seed !== S.cfg.seed) { S.cfg = cfg; S.moves = []; S.over = null; shownR = 0; revealAt = { r: 0, t: Date.now() }; autoSent = 0; $("fx").innerHTML = ""; known = { seed: null, m: {} }; }
+  const inc = st.moves || [];
+  const merged = inc.length ? mergeMoves(S.moves.concat(inc)) : (known = { seed: S.cfg.seed, m: {} }, []);
+  const needPush = remote && merged.length > inc.length;
+  S.moves = merged;
+  if (st.over && st.over.resign) { S.over = { win: false }; }
+  else if (!st.over && S.over && !state().win) { S.over = null; $("fx").innerHTML = ""; }
+  if (needPush && NETP) setTimeout(() => NETP.push(), 50);
+  after();
+}
+NETP = NetPlay.widget({
+  game: "lingxi", el: $("netBox"), sides: ["玩家一", "玩家二"],
+  adapter: {
+    getState: () => ({ moves: S.moves.slice(), over: S.over && !S.over.win ? { resign: true } : (S.over || null), cfg: S.cfg }),
+    setState: onlineApply,
+    turnSeat: () => { const c = state().cur; return c && c.w[0] != null ? 1 : 0; },
+    undoFor: () => S.moves.slice(),
+    newCfg: () => ({ seed: (Math.random() * 2 ** 31) | 0, think: S.think }),
+    resignOver: () => ({ resign: true }),
+    onEnter() { S.mode = "online"; save(); render(); },
+    onLeave() { S.mode = "local"; newGame(); },
+  },
+  onWantOnline() { S.mode = "online"; render(); },
+  onRender() { render(); },
+});
+
+(function init() {
+  let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
+  S = Object.assign(defaults(), st || {});
+  if (S.mode === "online") { S.mode = "local"; S.moves = []; S.over = null; }      // 連線房間由 net.js 自己接回
+  shownR = state().done.length; revealAt = { r: shownR, t: Date.now() };
+  if (S.over && S.over.win) stamp("心有靈犀", `第 ${S.over.rounds} 輪・都說「${S.over.word}」`);
+  render();
+})();
+</script>
