@@ -1,0 +1,896 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="棋盤小館"><meta name="theme-color" content="#131917"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon.png"><link rel="icon" href="icon.png"><style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style><script>if('serviceWorker' in navigator&&(location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname)))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))</script><title>烽火對壘</title>
+<style>
+  /* 烽火對壘（2026-10-30，Gabi：「塔防的策略遊戲」「對戰的感覺不錯 也可以自己跟電腦打」）
+     原創規則：雙方同時出牌（蓋塔守自己的城、派兵打對方），兩邊都按「準備好了」才一起開打；戰鬥是固定公式算出來的，
+     兩支手機各自算、結果一定一樣 → 連線只要傳每回合的出牌，用棋盤小館原本的 net.js。 */
+  :root {
+    --ground: #e7ece4; --panel: #f5f7f2; --ink: #1d2723; --muted: #5d6b64; --rule: #cbd4cb;
+    --jade: #2e7a67; --jade-soft: rgba(46, 122, 103, .16); --accent: #b0261d; --gold: #a8741a;
+    --c-tower: #2e7a67; --c-troop: #b0261d; --c-spell: #9a6a12;
+    --f-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #131917; --panel: #1b2320; --ink: #e2e9e4; --muted: #95a59d; --rule: #2b3732;
+      --jade: #5fb59d; --jade-soft: rgba(95, 181, 157, .18); --accent: #e0574b; --gold: #e6b450;
+      --c-tower: #5fb59d; --c-troop: #e0574b; --c-spell: #e6b450; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --ground: #131917; --panel: #1b2320; --ink: #e2e9e4; --muted: #95a59d; --rule: #2b3732;
+    --jade: #5fb59d; --jade-soft: rgba(95, 181, 157, .18); --accent: #e0574b; --gold: #e6b450;
+    --c-tower: #5fb59d; --c-troop: #e0574b; --c-spell: #e6b450; color-scheme: dark; }
+  [hidden] { display: none !important; }
+  html, body { background: var(--ground); color: var(--ink); }
+  body { font-family: var(--f-body); font-size: 15px; line-height: 1.55; padding-inline: 16px; padding-block: 18px 28px; margin: 0; }
+  .wrap { max-width: 1000px; margin: 0 auto; display: grid; gap: 22px; grid-template-columns: minmax(0, 520px) minmax(0, 340px); justify-content: center; align-items: start; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 520px); } }
+  header.top { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  header.top h1 { font-weight: 900; font-size: clamp(30px, 6vw, 40px); line-height: 1; margin: 0; letter-spacing: .06em; }
+  header.top p { margin: 0; color: var(--muted); font-size: 13px; flex: 1 1 220px; }
+  @media (max-width: 600px) { header.top p { display: none; } header.top h1 { font-size: 28px; } }
+  #viewSeg button { padding: 4px 0; font-size: 13px; }
+  a.home { margin-left: auto; color: var(--muted); text-decoration: none; font-size: 14px; border: 1px solid var(--rule); border-radius: 999px; padding: 5px 14px; }
+  .stage { display: grid; gap: 8px; min-width: 0; }
+  .bar { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; flex-wrap: wrap; }
+  .bar .side { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .bar b { font-variant-numeric: tabular-nums; }
+  .bar .rd { font-weight: 700; }
+  .bar .ready { color: var(--jade); font-size: 12px; }
+  .field { position: relative; }
+  canvas#cv { width: 100%; max-width: calc(54svh * .75); margin: 0 auto; display: block; border-radius: 12px; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+  .fx { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  .stamp { display: grid; justify-items: center; gap: 6px; transform: rotate(-6deg); color: var(--accent); animation: stampIn .42s cubic-bezier(.2,.9,.3,1.25) both; }
+  .stamp .big { font-weight: 900; font-size: clamp(56px, 15vw, 96px); line-height: 1; letter-spacing: .08em;
+    text-shadow: 3px 0 0 #fff6ea, -3px 0 0 #fff6ea, 0 3px 0 #fff6ea, 0 -3px 0 #fff6ea, 0 8px 18px rgba(0,0,0,.45); }
+  .stamp .small { font-weight: 700; font-size: 15px; color: #fff6ea; background: rgba(27, 29, 28, .82); padding: 3px 14px; border-radius: 999px; }
+  .toast { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); background: rgba(20, 24, 22, .88); color: #f3efe4; font-size: 14px;
+    padding: 6px 14px; border-radius: 14px; pointer-events: none; width: max-content; max-width: 88%; text-align: center; transition: opacity .3s; }
+  @keyframes stampIn { 0% { opacity: 0; transform: scale(2.2) rotate(-16deg); } 60% { opacity: 1; transform: scale(.94) rotate(-5deg); } 100% { opacity: 1; transform: scale(1) rotate(-6deg); } }
+  @media (prefers-reduced-motion: reduce) { .stamp { animation: none; } }
+  .info { min-height: 44px; font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .info b { color: var(--ink); }
+  .info .btn { padding: 5px 12px; font-size: 13px; }
+  .hand { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; min-height: 96px; }
+  .card { flex: 0 0 auto; width: 62px; height: 90px; border-radius: 10px; border: 2px solid var(--k); background: var(--panel); color: var(--ink);
+    display: grid; grid-template-rows: auto 1fr auto; justify-items: center; align-items: center; padding: 3px 2px; cursor: pointer; font: inherit; position: relative; }
+  .card .ch { font-size: 26px; font-weight: 900; color: var(--k); line-height: 1; }
+  .card .nm { font-size: 11px; }
+  .card .cost { font-size: 12px; font-weight: 700; color: var(--gold); }
+  .card[aria-pressed="true"] { background: var(--jade-soft); transform: translateY(-4px); }
+  .card.used { opacity: .28; cursor: default; }
+  .card.poor:not(.used) .cost { color: var(--accent); }
+  .card.k0 { --k: var(--c-tower); } .card.k1 { --k: var(--c-troop); } .card.k2 { --k: var(--c-spell); }
+  .draft { border: 1px dashed var(--rule); border-radius: 12px; padding: 8px; display: grid; gap: 6px; }
+  .draft .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .chips { display: flex; gap: 4px; flex-wrap: wrap; font-size: 12px; }
+  .chip { border: 1px solid var(--rule); border-radius: 999px; padding: 1px 8px; }
+  .ctl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; position: sticky; bottom: 0; z-index: 2; background: var(--ground); padding: 6px 0 8px; }
+  .ctl .grow { flex: 1; }
+  .ctl .btn { min-height: 42px; padding: 6px 14px; }
+  aside.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; display: grid; gap: 16px; min-width: 0; }
+  .status .msg { font-weight: 700; font-size: 17px; } .status .sub { color: var(--muted); font-size: 13px; }
+  .group { display: grid; gap: 6px; } .label { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+  .seg { display: flex; border: 1px solid var(--rule); border-radius: 9px; overflow: hidden; }
+  .seg button { flex: 1; background: transparent; border: 0; color: var(--muted); font: inherit; font-size: 14px; padding: 7px 0; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--rule); }
+  .seg button[aria-pressed="true"] { background: var(--jade-soft); color: var(--ink); font-weight: 700; }
+  .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .btn { font: inherit; font-size: 14px; padding: 8px 6px; border-radius: 9px; border: 1px solid var(--rule); background: var(--ground); color: var(--ink); cursor: pointer; }
+  .btn.primary { background: var(--jade); border-color: var(--jade); color: #fff; font-weight: 700; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--jade); outline-offset: 2px; }
+  .confirm { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+  .confirm .btn { font-size: 13px; padding: 4px 10px; }
+  .score { display: flex; gap: 14px; font-size: 14px; color: var(--muted); } .score b { color: var(--ink); }
+  details.rules { border-top: 1px solid var(--rule); padding-top: 10px; font-size: 14px; }
+  details.rules summary { cursor: pointer; font-weight: 700; }
+  details.rules li { margin: 4px 0; } details.rules ul { padding-left: 1.2em; margin: 8px 0; }
+  details.rules table { border-collapse: collapse; font-size: 12px; width: 100%; }
+  details.rules td, details.rules th { border-bottom: 1px solid var(--rule); padding: 3px 4px; text-align: left; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>烽火對壘</h1>
+    <p>卡牌塔防對戰：蓋塔守自己的城，也派兵去打對方。雙方同時出牌，都準備好才一起開打，先把對方城牆打到 0 的贏。</p>
+    <a class="home" href="./">← 全部棋類</a>
+  </header>
+  <div class="stage">
+    <div class="bar" id="bar"></div>
+    <div class="seg" id="viewSeg"><button data-v="me">我方城池</button><button data-v="opp">對手城池</button></div>
+    <div class="field"><canvas id="cv"></canvas><div class="fx" id="fx" aria-live="assertive"></div><div class="toast" id="toast" hidden></div></div>
+    <div class="draft" id="draft" hidden></div>
+    <div class="info" id="info"></div>
+    <div class="hand" id="hand"></div>
+    <div class="ctl" id="ctl"></div>
+  </div>
+  <aside class="panel">
+    <div class="status" aria-live="polite"><div class="msg" id="msg"></div><div class="sub" id="sub"></div></div>
+    <div class="score" id="score"></div>
+    <div class="group"><span class="label">玩法</span>
+      <div class="seg" id="modeSeg"><button data-mode="ai">對電腦</button><button data-mode="online">連線對戰</button></div></div>
+    <div class="group" id="netBox" hidden></div>
+    <div class="group" id="aiOpts"><span class="label">電腦強度</span>
+      <div class="seg" id="lvlSeg"><button data-lv="0">簡單</button><button data-lv="1">普通</button><button data-lv="2">困難</button></div></div>
+    <div class="group"><span class="label">音效</span>
+      <div class="seg" id="sndSeg"><button data-s="1">開</button><button data-s="0">關</button></div></div>
+    <div class="actions"><button class="btn primary" id="btnNew">新局</button><button class="btn" id="btnGiveUp">認輸</button></div>
+    <div class="confirm" id="confirm" hidden><span id="confirmText"></span><button class="btn primary" id="confirmYes">確定</button><button class="btn" id="confirmNo">取消</button></div>
+    <details class="rules"><summary>玩法說明</summary>
+      <ul>
+        <li>兩邊各有一座城（<b>30 點城牆</b>）和一條一樣的路。怪物從上面的入口沿著路走到下面的城門，每漏一隻城牆就扣血。</li>
+        <li>每回合分兩段：<b>出牌</b>（兩邊同時、看不到對方出什麼）→ 都按「準備好了」→ <b>開打</b>（自動進行，可以加速或跳過）。</li>
+        <li><b>第 1 回合是準備回合</b>，雙方都不能派兵，只有野怪。</li>
+        <li>每回合抽 5 張牌，另外可以從 3 張新卡裡挑 1 張加進牌組（當回合就能用）。沒出的牌回到牌堆，之後還會再抽到。</li>
+        <li><b>綠色＝塔</b>：選卡再點空地蓋下去。點自己的塔可以升級（最多 5 級）或賣掉（拿回 7 成）。</li>
+        <li><b>兵營</b>：不用卡，隨時可以花金幣升級，之後派出去的兵血量永久 +40%。錢多的時候拿來加強進攻。</li>
+        <li>塔越多越貴：每多一座塔，下一座多 2 金。地方和錢都有限，升級往往比亂蓋划算。</li>
+        <li><b>紅色＝兵</b>：派到對方的路上打他的城；每派一隊，<b>之後每回合收入都會增加</b>。所以派兵又是進攻又是投資。</li>
+        <li><b>黃色＝計策</b>：加收入、修城、戰鼓（兵血更多）、寒霜（來犯的敵人變慢）、軍餉。</li>
+        <li>每回合也會有野怪攻向雙方，而且越來越強，一直不蓋塔一定守不住。第 3、6、9…回合有會飛的野鴉，<b>砲塔打不到飛的</b>。</li>
+        <li>對手的塔在開打時才會曝光。「對手城池」可以看他目前的防守，挑他的弱點派兵：沒對空就派飛鷹，箭塔多就派鐵甲兵。</li>
+        <li>回合結束時城牆歸零的輸；兩邊同時歸零，剩比較多的贏。</li>
+      </ul>
+      <table>
+        <tr><th>塔</th><th>特色</th></tr>
+        <tr><td>箭塔</td><td>便宜、射得快，打得到飛的；打鐵甲很痛苦</td></tr>
+        <tr><td>砲塔</td><td>範圍爆炸，專打成群的；<b>打不到飛的</b></td></tr>
+        <tr><td>冰塔</td><td>傷害低，但讓敵人變慢</td></tr>
+        <tr><td>雷塔</td><td>閃電一次跳好幾隻</td></tr>
+        <tr><td>弩塔</td><td>射很遠、一發很痛、無視護甲</td></tr>
+      </table>
+    </details>
+  </aside>
+</div>
+
+<script src="net.js"></script>
+<script>
+/*__SIM_BEGIN__*/
+/* ───────── 規則與戰鬥（全部整數運算：兩支手機算出來的結果一定一樣） ───────── */
+const COLS = 9, ROWS = 12, CELL = 1000, TPS = 20, MAX_TICK = 2400, START_HP = 30, HP_CAP = 40;
+const WP = [[1, 0], [1, 3], [7, 3], [7, 6], [1, 6], [1, 9], [7, 9], [7, 11]];
+const PATH = [];
+for (let i = 0; i + 1 < WP.length; i++) {
+  const [x0, y0] = WP[i], [x1, y1] = WP[i + 1], dx = Math.sign(x1 - x0), dy = Math.sign(y1 - y0);
+  for (let x = x0, y = y0; x !== x1 || y !== y1; x += dx, y += dy) PATH.push([x, y]);
+}
+PATH.push(WP[WP.length - 1]);
+const PATHSET = new Set(PATH.map(([x, y]) => y * COLS + x));
+const PLEN = (PATH.length - 1) * CELL;
+function posAt(d) {
+  if (d >= PLEN) d = PLEN;
+  const i = Math.min(PATH.length - 2, Math.floor(d / CELL)), f = d - i * CELL;
+  const [x0, y0] = PATH[i], [x1, y1] = PATH[i + 1];
+  return [x0 * CELL + 500 + (x1 - x0) * f, y0 * CELL + 500 + (y1 - y0) * f];
+}
+const sq = (x, y) => x * x + y * y;
+
+// 塔：cost 金、dmg 傷害、cd 冷卻（tick）、rng 射程（1000＝一格）、air 打得到飛的
+const TW = {
+  arrow:    { n: "箭塔", c: "箭", cost: 10, dmg: 6,  cd: 12, rng: 2600, air: 1, col: "#8fd17f" },
+  cannon:   { n: "砲塔", c: "砲", cost: 16, dmg: 15, cd: 30, rng: 2300, air: 0, splash: 950, col: "#eea153" },
+  frost:    { n: "冰塔", c: "冰", cost: 12, dmg: 2,  cd: 16, rng: 2300, air: 1, slow: 40, col: "#82cdf4" },
+  tesla:    { n: "雷塔", c: "雷", cost: 18, dmg: 9,  cd: 24, rng: 2000, air: 1, chain: 3, col: "#c8a0f5" },
+  ballista: { n: "弩塔", c: "弩", cost: 22, dmg: 34, cd: 44, rng: 3700, air: 1, pierce: 1, col: "#f2d66e" },
+};
+const LVM = [100, 170, 280, 420, 620], MAXLV = 4;
+const upCost = t => Math.floor(TW[t.t].cost * [8, 13, 20, 30][t.lv] / 10);
+// 兵營：每一級讓自己派出去的兵血量 +TUNE.bar%（永久）
+const barCost = P => 20 + 15 * P.bar;
+// 回合越後面怪越硬：野怪、派出的兵每回合各乘一個倍數（整數連乘，兩邊算法一樣）
+// 10-30 電腦互打調出來的：一局大約 13–17 回合，中盤開始有人漏怪（ng 野怪成長、sg 派兵成長、sur 每多一座塔蓋塔貴幾金、bar 兵營每級加血 %）
+const TUNE = { ng: 120, sg: 112, sur: 2, bar: 40 };
+function grow(r, pct) { let h = 100; for (let k = 1; k < r; k++) h = Math.floor(h * pct / 100); return h; }
+// 兵：spd 每 tick 走多少（1000＝一格）、arm 護甲（每下減傷）、dmg 漏進城扣幾點、b 被打死時給守方的賞金
+const UN = {
+  grunt:  { n: "步兵",   hp: 30,  spd: 60,  arm: 0, dmg: 1, b: 1, gap: 5,  r: 260, col: "#f0e6cc" },
+  runner: { n: "疾風騎", hp: 24,  spd: 110, arm: 0, dmg: 1, b: 1, gap: 6,  r: 240, col: "#ffd27a" },
+  armor:  { n: "鐵甲兵", hp: 60,  spd: 40,  arm: 5, dmg: 1, b: 2, gap: 10, r: 320, col: "#a9b3bd" },
+  flyer:  { n: "飛鷹",   hp: 28,  spd: 75,  arm: 0, dmg: 1, b: 1, gap: 7,  r: 260, air: 1, col: "#9fe0ff" },
+  priest: { n: "祭司",   hp: 40,  spd: 50,  arm: 0, dmg: 1, b: 2, gap: 10, r: 280, heal: 6, col: "#b8f5b0" },
+  golem:  { n: "巨像",   hp: 320, spd: 30,  arm: 3, dmg: 4, b: 6, gap: 24, r: 440, col: "#d79a76" },
+  creep:  { n: "野怪",   hp: 22,  spd: 60,  arm: 0, dmg: 1, b: 1, gap: 7,  r: 240, col: "#8f8f8f" },
+  crow:   { n: "野鴉",   hp: 18,  spd: 80,  arm: 0, dmg: 1, b: 1, gap: 8,  r: 220, air: 1, col: "#6f7c8c" },
+  brute:  { n: "山魈",   hp: 130, spd: 40,  arm: 3, dmg: 2, b: 4, gap: 20, r: 380, col: "#7a6a5a" },
+};
+// 卡：k 0＝塔 1＝兵 2＝計策
+const CARDS = {
+  arrow: { k: 0 }, cannon: { k: 0 }, frost: { k: 0 }, tesla: { k: 0 }, ballista: { k: 0 },
+  grunt:  { k: 1, n: 5, cost: 6,  inc: 1 },
+  runner: { k: 1, n: 4, cost: 8,  inc: 1 },
+  armor:  { k: 1, n: 3, cost: 11, inc: 2 },
+  flyer:  { k: 1, n: 4, cost: 10, inc: 2 },
+  priest: { k: 1, n: 2, cost: 9,  inc: 1 },
+  golem:  { k: 1, n: 1, cost: 22, inc: 4 },
+  tax:   { k: 2, nm: "徵稅", c: "稅", cost: 8, d: "之後每回合收入 +4" },
+  wall:  { k: 2, nm: "修城", c: "城", cost: 8, d: "城牆 +5（最多 40）" },
+  drum:  { k: 2, nm: "戰鼓", c: "鼓", cost: 6, d: "這回合派出去的兵血量 +40%" },
+  chill: { k: 2, nm: "寒霜", c: "霜", cost: 7, d: "這回合打過來的敵人全部變慢 25%" },
+  loot:  { k: 2, nm: "軍餉", c: "餉", cost: 0, d: "立刻 +12 金" },
+};
+const cardCost = (k, P) => CARDS[k].k === 0 ? TW[k].cost + (P ? TUNE.sur * Object.keys(P.tw).length : 0) : CARDS[k].cost;
+const cardName = k => CARDS[k].k === 0 ? TW[k].n : CARDS[k].k === 1 ? UN[k].n : CARDS[k].nm;
+const cardChar = k => CARDS[k].k === 0 ? TW[k].c : CARDS[k].k === 1 ? { grunt: "兵", runner: "騎", armor: "甲", flyer: "鷹", priest: "祭", golem: "像" }[k] : CARDS[k].c;
+const START = ["arrow", "arrow", "arrow", "cannon", "frost", "frost", "grunt", "grunt", "grunt", "runner", "runner", "armor", "flyer", "tax", "wall", "loot"];
+const POOL = ["arrow", "cannon", "frost", "tesla", "tesla", "ballista", "ballista", "grunt", "runner", "armor", "flyer", "flyer", "priest", "priest", "golem", "golem", "tax", "wall", "drum", "chill", "loot"];
+
+function rng(seed, a, b, c) {
+  let h = (seed ^ Math.imul(a + 1, 0x9E3779B1) ^ Math.imul(b + 7, 0x85EBCA77) ^ Math.imul((c || 0) + 13, 0xC2B2AE3D)) >>> 0;
+  return () => { h = (h + 0x6D2B79F5) >>> 0; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function shuffle(a, R) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } }
+
+class Battle {
+  constructor(tw, queue, chill, vis) {
+    this.tw = Object.keys(tw).map(Number).sort((a, b) => a - b).map(i => ({ i, x: (i % COLS) * CELL + 500, y: Math.floor(i / COLS) * CELL + 500, t: tw[i].t, lv: tw[i].lv, cd: 0, D: TW[tw[i].t] }));
+    Object.assign(this, { q: queue, qi: 0, units: [], tick: 0, leak: 0, leaked: 0, bounty: 0, kills: 0, spd: chill ? 75 : 100, fx: vis ? [] : null, nid: 1, done: false });
+  }
+  hit(u, dmg, pierce) {
+    if (u.dead) return;
+    u.hp -= pierce ? dmg : Math.max(1, dmg - UN[u.u].arm);
+    if (u.hp <= 0) { u.dead = 1; this.bounty += UN[u.u].b; this.kills++; if (this.fx) { const p = posAt(u.d); this.fx.push({ k: "die", x: p[0], y: p[1], t: this.tick, col: UN[u.u].col }); } }
+  }
+  step() {
+    const T = ++this.tick, fx = this.fx;
+    while (this.qi < this.q.length && this.q[this.qi].at <= T) {
+      const e = this.q[this.qi++], mh = Math.max(1, Math.floor(UN[e.u].hp * e.hm / 100));
+      this.units.push({ id: this.nid++, u: e.u, d: 0, pd: 0, hp: mh, mh, slowT: 0, slowP: 0, hc: 0, dead: 0, en: e.en });
+    }
+    for (const u of this.units) {
+      u.pd = u.d;
+      let sp = Math.floor(UN[u.u].spd * this.spd / 100);
+      if (u.slowT > T) sp = Math.floor(sp * (100 - u.slowP) / 100);
+      u.d += Math.max(1, sp);
+      if (u.d >= PLEN) { u.d = PLEN; u.dead = 2; this.leak += UN[u.u].dmg; this.leaked++; if (fx) fx.push({ k: "leak", t: T }); }
+    }
+    for (const u of this.units) {
+      if (u.dead || !UN[u.u].heal || ++u.hc < 20) continue;
+      u.hc = 0;
+      const [x, y] = posAt(u.d), amt = Math.max(1, Math.floor(UN[u.u].heal * u.mh / UN[u.u].hp));
+      for (const v of this.units) { if (v.dead || v.hp >= v.mh) continue; const p = posAt(v.d); if (sq(p[0] - x, p[1] - y) <= 1300 * 1300) v.hp = Math.min(v.mh, v.hp + amt); }
+      if (fx) fx.push({ k: "heal", x, y, t: T });
+    }
+    for (const t of this.tw) {
+      if (t.cd > 0) { t.cd--; continue; }
+      const D = t.D, rg = D.rng + 300 * t.lv;
+      let best = null, bp = null;
+      for (const u of this.units) {
+        if (u.dead || (UN[u.u].air && !D.air)) continue;
+        const p = posAt(u.d);
+        if (sq(p[0] - t.x, p[1] - t.y) > rg * rg) continue;
+        if (!best || u.d > best.d) { best = u; bp = p; }
+      }
+      if (!best) continue;
+      t.cd = D.cd;
+      const dmg = Math.floor(D.dmg * LVM[t.lv] / 100);
+      if (D.splash) {
+        for (const v of this.units) { if (v.dead || UN[v.u].air) continue; const p = posAt(v.d); if (sq(p[0] - bp[0], p[1] - bp[1]) <= D.splash * D.splash) this.hit(v, dmg); }
+        if (fx) fx.push({ k: "boom", x0: t.x, y0: t.y, x: bp[0], y: bp[1], t: T, col: D.col });
+      } else if (D.chain) {
+        const hitSet = new Set([best.id]), pts = [[t.x, t.y], bp];
+        let cur = best, cp = bp, dm = dmg;
+        this.hit(cur, dm);
+        for (let n = 1; n < D.chain + t.lv; n++) {
+          let nx = null, np = null, nd = 0;
+          for (const v of this.units) {
+            if (v.dead || hitSet.has(v.id)) continue;
+            const p = posAt(v.d), dd = sq(p[0] - cp[0], p[1] - cp[1]);
+            if (dd <= 1600 * 1600 && (!nx || dd < nd)) { nx = v; np = p; nd = dd; }
+          }
+          if (!nx) break;
+          dm = Math.floor(dm * 4 / 5); hitSet.add(nx.id); this.hit(nx, dm); pts.push(np); cp = np;
+        }
+        if (fx) fx.push({ k: "zap", pts, t: T, col: D.col });
+      } else {
+        this.hit(best, dmg, D.pierce);
+        if (D.slow) { const sp = D.slow + 10 * t.lv; if (best.slowT <= T || best.slowP < sp) best.slowP = sp; best.slowT = T + 40; }
+        if (fx) fx.push({ k: "shot", x0: t.x, y0: t.y, x: bp[0], y: bp[1], t: T, col: D.col });
+      }
+    }
+    this.units = this.units.filter(u => !u.dead);
+    if (this.qi >= this.q.length && !this.units.length) this.done = true;
+    if (T >= MAX_TICK && !this.done) { for (const u of this.units) { this.leak += UN[u.u].dmg; this.leaked++; } this.units = []; this.done = true; }
+    if (fx && fx.length > 200) this.fx = fx.filter(f => T - f.t < 12);
+  }
+}
+const run = b => { while (!b.done) b.step(); return b; };
+
+// 一回合打過來的隊伍：先野怪，再對手派的兵
+function waveQueue(r, sends, drum, bar) {
+  const q = []; let at = 10;
+  const push = (u, n, hm, en) => { for (let i = 0; i < n; i++) { q.push({ u, hm, at, en }); at += UN[u].gap; } at += 12; };
+  const nh = grow(r, TUNE.ng);
+  push("creep", 5 + r, nh, 0);
+  if (r % 3 === 0) push("crow", 2 + Math.floor(r / 3), nh, 0);
+  if (r % 5 === 0) push("brute", Math.floor(r / 5), nh, 0);
+  at += 20;
+  const hm = Math.floor(grow(r, TUNE.sg) * (100 + TUNE.bar * (bar || 0)) / 100 * (drum ? 140 : 100) / 100);
+  for (const u of sends) push(u, CARDS[u].n, hm, 1);
+  return q;
+}
+
+function mkP() { return { hp: START_HP, gold: 40, inc: 12, draw: [], disc: START.slice(), hand: [], used: [], offer: [], drafted: 0, tw: {}, sends: [], drum: 0, chill: 0, last: [], sent: 0, bar: 0 }; }
+function drawCard(P, R) { if (!P.draw.length) { P.draw = P.disc; P.disc = []; shuffle(P.draw, R); } if (P.draw.length) { P.hand.push(P.draw.pop()); P.used.push(0); } }
+function startRound(G) {
+  G.p.forEach((P, s) => {
+    if (G.r > 1) P.gold += P.inc;
+    const R = rng(G.seed, s, G.r);
+    P.rd = G.r;
+    if (G.r === 1) { P.draw = P.disc; P.disc = []; shuffle(P.draw, R); for (const t of ["arrow", "frost"]) { const j = P.draw.indexOf(t); P.draw.splice(j, 1); P.draw.push(t); } }   // 起手保證有箭塔、冰塔
+    for (let k = 0; k < 5; k++) drawCard(P, R);
+    P.offer = [0, 1, 2].map(() => POOL[Math.floor(R() * POOL.length)]);
+  });
+}
+function newGame(seed) { const G = { seed, r: 1, p: [mkP(), mkP()], over: null, last: null }; startRound(G); return G; }
+const buildable = (P, i) => i >= 0 && i < COLS * ROWS && !PATHSET.has(i) && !P.tw[i];
+// 一個出牌動作；不合法就略過（回傳 false），兩邊都用同一個函式，所以結果一樣
+function act(P, a) {
+  if (!a) return false;
+  if (a.a === "d") { if (P.drafted) return false; P.drafted = 1; if (a.k >= 0 && a.k < P.offer.length) { P.hand.push(P.offer[a.k]); P.used.push(0); } return true; }
+  if (a.a === "k") { const c = barCost(P); if (P.gold < c) return false; P.gold -= c; P.bar++; return true; }
+  if (a.a === "u") { const t = P.tw[a.i]; if (!t || t.lv >= MAXLV) return false; const c = upCost(t); if (P.gold < c) return false; P.gold -= c; t.lv++; t.inv += c; return true; }
+  if (a.a === "s") { const t = P.tw[a.i]; if (!t) return false; P.gold += Math.floor(t.inv * 7 / 10); delete P.tw[a.i]; return true; }
+  const h = a.h;
+  if (!(h >= 0 && h < P.hand.length) || P.used[h]) return false;
+  const key = P.hand[h], C = CARDS[key], cost = cardCost(key, P);
+  if (P.gold < cost) return false;
+  if (C.k === 0) { if (a.a !== "b" || !buildable(P, a.i)) return false; P.tw[a.i] = { t: key, lv: 0, inv: cost }; }
+  else if (C.k === 1) { if (a.a !== "t" || P.rd === 1) return false; P.sends.push(key); P.inc += C.inc; }
+  else {
+    if (a.a !== "x") return false;
+    if (key === "tax") P.inc += 4;
+    else if (key === "wall") P.hp = Math.min(HP_CAP, P.hp + 5);
+    else if (key === "drum") P.drum = 1;
+    else if (key === "chill") P.chill = 1;
+    else if (key === "loot") P.gold += 12;
+  }
+  P.gold -= cost; P.used[h] = 1;
+  return true;
+}
+function applyPlan(P, plan) { for (const a of plan || []) act(P, a); }
+function resolve(G) {
+  const snaps = [0, 1].map(d => ({ tw: JSON.parse(JSON.stringify(G.p[d].tw)), q: waveQueue(G.r, G.p[1 - d].sends, G.p[1 - d].drum, G.p[1 - d].bar), chill: G.p[d].chill }));
+  const res = snaps.map(s => { const b = run(new Battle(s.tw, s.q, s.chill, false)); return { leak: b.leak, leaked: b.leaked, bounty: b.bounty, kills: b.kills }; });
+  G.last = { r: G.r, snaps, res, hp: G.p.map(P => P.hp), gold: G.p.map(P => P.gold), sends: G.p.map(P => P.sends.slice()) };
+  G.p.forEach((P, d) => {
+    P.hp -= res[d].leak; P.gold += res[d].bounty;
+    P.last = P.sends; P.sent += P.sends.length; P.sends = []; P.drum = 0; P.chill = 0;
+    P.disc.push(...P.hand); P.hand = []; P.used = []; P.drafted = 0; P.offer = [];
+  });
+  const [a, b] = G.p.map(P => P.hp);
+  if (a <= 0 || b <= 0) G.over = { w: a > b ? 0 : b > a ? 1 : -1 };
+  else { G.r++; startRound(G); }
+}
+// 從頭重算：moves = [{r, s, p:[動作]}]
+function advance(G, moves) {
+  while (!G.over) {
+    const m0 = moves.find(m => m.r === G.r && m.s === 0), m1 = moves.find(m => m.r === G.r && m.s === 1);
+    if (!m0 || !m1) break;
+    applyPlan(G.p[0], m0.p); applyPlan(G.p[1], m1.p);
+    resolve(G);
+  }
+  return G;
+}
+const clone = o => JSON.parse(JSON.stringify(o));
+
+/* ───────── 電腦 ───────── */
+const COVER = {};
+function cover(i, rg) {
+  const k = i + ":" + rg;
+  if (COVER[k] !== undefined) return COVER[k];
+  const x = (i % COLS) * CELL + 500, y = Math.floor(i / COLS) * CELL + 500;
+  let n = 0;
+  PATH.forEach(([px, py], j) => { if (sq(px * CELL + 500 - x, py * CELL + 500 - y) <= rg * rg) n += 1 + j / PATH.length * 0.3; });
+  return COVER[k] = n;
+}
+function towerValue(i, t) { const D = TW[t.t]; return cover(i, D.rng + 300 * t.lv) * D.dmg * LVM[t.lv] / 100 / D.cd; }
+function oppProfile(O) {
+  let air = 0, all = 0, splash = 0, frost = 0, arrow = 0, pierce = 0;
+  for (const i in O.tw) {
+    const t = O.tw[i], D = TW[t.t], v = towerValue(+i, t) + 0.5;
+    all += v; if (D.air) air += v; if (D.splash || D.chain) splash += v; if (D.slow) frost += 1 + t.lv; if (t.t === "arrow") arrow += v; if (D.pierce) pierce += v;
+  }
+  return { air, all, splash, frost, arrow, pierce };
+}
+function troopScore(u, pr, r) {
+  const share = (x) => pr.all ? x / pr.all : 0;
+  let s = 1;
+  if (u === "grunt") s = 1 - 0.5 * share(pr.splash);
+  if (u === "runner") s = 1.15 - Math.min(0.6, pr.frost * 0.15);
+  if (u === "armor") s = 0.7 + share(pr.arrow) - 0.8 * share(pr.pierce);
+  if (u === "flyer") s = 0.6 + 1.4 * (1 - share(pr.air));
+  if (u === "priest") s = 0.8;
+  if (u === "golem") s = r >= 5 ? 1.2 - 0.6 * share(pr.pierce) : 0.5;
+  return s;
+}
+function draftScore(c, P, O, r) {
+  const pr = oppProfile(O), lastFly = (O.last || []).filter(u => u === "flyer").length, lastArm = (O.last || []).filter(u => u === "armor" || u === "golem").length;
+  const towersInHand = P.hand.filter((k, j) => CARDS[k].k === 0 && !P.used[j]).length, needT = towersInHand ? 0 : Object.keys(P.tw).length < 3 ? 8 : 3;
+  const t = { arrow: 4 + lastFly + needT, cannon: 5 + needT, frost: 4 + needT, tesla: 6 + needT, ballista: 6 + 2 * lastArm + needT, grunt: 2, runner: 3, armor: 3, flyer: 3 + 2 * (pr.all ? 1 - pr.air / pr.all : 0),
+    priest: 3, golem: r >= 4 ? 6 : 2, tax: r <= 6 ? 7 : 2, wall: P.hp < 15 ? 7 : 2, drum: 3, chill: 3, loot: 4 };
+  return t[c] || 1;
+}
+function defend(Q, L, target, lv, R) {
+  const doA = a => act(Q, a) && (L.push(a), true);
+  const cells = [];
+  for (let i = 0; i < COLS * ROWS; i++) if (!PATHSET.has(i)) cells.push(i);
+  const order = Q.hand.map((k, h) => h).filter(h => !Q.used[h] && CARDS[Q.hand[h]].k === 0).sort((a, b) => cardCost(Q.hand[b]) - cardCost(Q.hand[a]));
+  for (const h of order) {
+    const k = Q.hand[h];
+    if (Q.gold - cardCost(k, Q) < target - 4 && Object.keys(Q.tw).length >= 2) continue;
+    const rg = TW[k].rng;
+    const opts = cells.filter(i => buildable(Q, i)).map(i => [i, cover(i, rg) + (lv === 0 ? R() * 4 : 0)]).sort((a, b) => b[1] - a[1]);
+    if (!opts.length) break;
+    const pick = lv === 0 ? opts[Math.floor(R() * Math.min(10, opts.length))][0] : opts[0][0];
+    doA({ a: "b", h, i: pick });
+  }
+  for (let guard = 0; guard < 20; guard++) {
+    let best = null, bv = 0;
+    for (const i in Q.tw) {
+      const t = Q.tw[i]; if (t.lv >= MAXLV) continue;
+      const c = upCost(t); if (Q.gold - c < target) continue;
+      const v = (towerValue(+i, { t: t.t, lv: t.lv + 1 }) - towerValue(+i, t)) / c;
+      if (v > bv) { bv = v; best = +i; }
+    }
+    if (best === null || !doA({ a: "u", i: best })) break;
+  }
+}
+function offend(Q, L, O, r, lv, R) {
+  const pr = oppProfile(O);
+  const doA = a => act(Q, a) && (L.push(a), true);
+  const hs = Q.hand.map((k, h) => h).filter(h => !Q.used[h] && CARDS[Q.hand[h]].k === 1)
+    .map(h => [h, troopScore(Q.hand[h], pr, r) * UN[Q.hand[h]].hp * CARDS[Q.hand[h]].n / cardCost(Q.hand[h]) + (lv === 0 ? R() : 0)]).sort((a, b) => b[1] - a[1]);
+  let n = 0;
+  for (const [h] of hs) { if (lv === 0 && R() < 0.25) continue; if (doA({ a: "t", h })) n++; }
+  if (n >= 2) { const h = Q.hand.findIndex((k, j) => k === "drum" && !Q.used[j]); if (h >= 0) doA({ a: "x", h }); }
+  const keep = lv === 0 ? 15 : lv === 1 ? 8 : 0;
+  while (r >= 3 && Q.gold - barCost(Q) >= keep && doA({ a: "k" })) { if (lv === 0 && R() < 0.5) break; }
+  return n;
+}
+function aiPlan(G, s, lv) {
+  const r = G.r, O = G.p[1 - s], R = rng(G.seed ^ 0x5bd1e995, s, r, 99);
+  const base = clone(G.p[s]), L0 = [];
+  const doA = (P, L, a) => act(P, a) && (L.push(a), true);
+  let k = -1, bs = -1;
+  base.offer.forEach((c, j) => { const v = draftScore(c, base, O, r) + (lv === 0 ? R() * 3 : 0); if (v > bs) { bs = v; k = j; } });
+  doA(base, L0, { a: "d", k });
+  base.hand.forEach((c, h) => {
+    if (c === "loot") doA(base, L0, { a: "x", h });
+    if (c === "tax" && r <= 9 && base.gold >= 20) doA(base, L0, { a: "x", h });
+    if (c === "wall" && base.hp <= 18) doA(base, L0, { a: "x", h });
+  });
+  if (lv === 0) { const Q = clone(base), L = []; defend(Q, L, Math.floor(Q.gold * 0.45), lv, R); offend(Q, L, O, r, lv, R); return L0.concat(L); }
+  const guess = (O.last || []).slice();
+  if (lv === 2) for (let i = 0; i < Math.ceil(guess.length * 0.4); i++) guess.push(guess[i]);
+  const fracs = lv === 2 ? [0.25, 0.4, 0.55, 0.7, 0.85, 1] : [0.5, 0.75];
+  let best = null;
+  for (const f of fracs) {
+    for (const useChill of [false, true]) {
+      const Q = clone(base), L = [];
+      if (useChill) { const h = Q.hand.findIndex((c, j) => c === "chill" && !Q.used[j]); if (h < 0 || !doA(Q, L, { a: "x", h })) continue; }
+      defend(Q, L, Math.floor(Q.gold * (1 - f)), lv, R);
+      const b = run(new Battle(Q.tw, waveQueue(r, guess, 0, O.bar), Q.chill, false));
+      const n = offend(Q, L, O, r, lv, R);
+      const risk = Q.hp <= 10 ? 90 : Q.hp <= 20 ? 50 : 30;
+      const score = -b.leak * risk + Q.inc * 4 + n * 3 + Q.bar * 5 + Q.gold * 0.3 + b.bounty;
+      if (!best || score > best.score) best = { score, L };
+    }
+  }
+  return L0.concat(best.L);
+}
+/*__SIM_END__*/
+
+/* ───────── 畫面 ───────── */
+const $ = id => document.getElementById(id);
+const STORE = "fengtd-v1";
+const LVNAME = ["簡單", "普通", "困難"];
+let NETP = null;
+let S, G, gKey = "";
+const UI = { view: "me", sel: null, tw: null, anim: null, speed: 2, toastT: 0 };
+const defaults = () => ({ mode: "ai", level: 1, moves: [], cfg: { seed: (Math.random() * 2 ** 31) | 0 }, plan: [], planR: 0, shown: 0, resign: null, snd: 1, score: { w: 0, l: 0, d: 0 } });
+const save = () => { try { S.over = G && over() ? 1 : 0; localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { } };   // over：首頁「接著下」看這個
+const me = () => S.mode === "online" && NETP && NETP.active() ? (NETP.mySeat() ?? 0) : 0;
+const over = () => S.resign || G.over;
+// 重算局面（moves 只會變長時接著算，不用從頭）
+function rebuild() {
+  const key = S.cfg.seed + "|" + S.moves.length;
+  if (G && G.seed === S.cfg.seed && gKey && S.moves.length >= +gKey.split("|")[1]) advance(G, S.moves);
+  else G = advance(newGame(S.cfg.seed), S.moves);
+  gKey = key;
+  if (S.planR !== G.r) { S.plan = []; S.planR = G.r; }
+}
+const submitted = s => S.moves.some(m => m.r === G.r && m.s === s);
+function preview() { const P = clone(G.p[me()]); const ok = []; for (const a of S.plan) ok.push(act(P, a)); return { P, ok }; }
+
+/* 音效（WebAudio 小合成） */
+let AC = null;
+function beep(f, dur, type, vol, slide) {
+  if (!S.snd) return;
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime;
+    o.type = type || "sine"; o.frequency.setValueAtTime(f, t); if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + dur);
+    g.gain.setValueAtTime(vol || .08, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g).connect(AC.destination); o.start(t); o.stop(t + dur + .02);
+  } catch (e) { }
+}
+let lastPop = 0;
+const sndPop = () => { const n = performance.now(); if (n - lastPop < 70) return; lastPop = n; beep(520 + Math.random() * 200, .06, "triangle", .035); };
+const sndLeak = () => beep(110, .25, "sawtooth", .07, 60);
+const sndHorn = () => { beep(220, .35, "sawtooth", .05, 330); setTimeout(() => beep(330, .4, "sawtooth", .05, 440), 160); };
+const sndPlace = () => beep(300, .08, "square", .04, 450);
+
+/* 畫布 */
+const cv = $("cv"), cx = cv.getContext("2d");
+let CS = 40;
+function sizeCanvas() {
+  const w = cv.clientWidth || 360, dpr = Math.min(3, window.devicePixelRatio || 1);
+  CS = w / COLS;
+  cv.style.height = (CS * ROWS) + "px";
+  cv.width = Math.round(w * dpr); cv.height = Math.round(CS * ROWS * dpr);
+  cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+const px = v => v / CELL * CS;
+function drawBoard(tw, opts) {
+  opts = opts || {};
+  const W = COLS * CS, H = ROWS * CS;
+  cx.fillStyle = "#18221d"; cx.fillRect(0, 0, W, H);
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const i = y * COLS + x;
+    if (PATHSET.has(i)) continue;
+    cx.fillStyle = (x + y) % 2 ? "#22302a" : "#1f2b25";
+    cx.fillRect(x * CS + 1, y * CS + 1, CS - 2, CS - 2);
+    if (opts.hl && buildable({ tw }, i)) { cx.strokeStyle = "rgba(143,209,127,.55)"; cx.lineWidth = 1.5; cx.strokeRect(x * CS + 3, y * CS + 3, CS - 6, CS - 6); }
+  }
+  // 路
+  cx.strokeStyle = "#5e4b36"; cx.lineWidth = CS * .78; cx.lineCap = "round"; cx.lineJoin = "round";
+  cx.beginPath(); PATH.forEach(([x, y], j) => { const X = x * CS + CS / 2, Y = y * CS + CS / 2; j ? cx.lineTo(X, Y) : cx.moveTo(X, Y); }); cx.stroke();
+  cx.strokeStyle = "rgba(255,230,190,.08)"; cx.lineWidth = CS * .1; cx.setLineDash([CS * .15, CS * .3]); cx.stroke(); cx.setLineDash([]);
+  // 入口與城門
+  const [sx, sy] = PATH[0], [ex, ey] = PATH[PATH.length - 1];
+  cx.fillStyle = "#8a3b8f"; cx.beginPath(); cx.arc(sx * CS + CS / 2, sy * CS + CS / 2, CS * .32, 0, 7); cx.fill();
+  cx.fillStyle = "#e9d7b0"; cx.fillRect(ex * CS + CS * .12, ey * CS + CS * .2, CS * .76, CS * .66);
+  cx.fillStyle = "#3c2f22"; cx.fillRect(ex * CS + CS * .36, ey * CS + CS * .48, CS * .28, CS * .38);
+  for (let k = 0; k < 3; k++) { cx.fillStyle = "#e9d7b0"; cx.fillRect(ex * CS + CS * (.12 + k * .3), ey * CS + CS * .08, CS * .16, CS * .14); }
+  // 塔
+  for (const i in tw) {
+    const t = tw[i], D = TW[t.t], x = (i % COLS) * CS, y = Math.floor(i / COLS) * CS;
+    const fresh = opts.fresh && opts.fresh.has(+i);
+    cx.fillStyle = "#0f1512"; roundRect(x + CS * .1, y + CS * .1, CS * .8, CS * .8, CS * .16); cx.fill();
+    cx.strokeStyle = D.col; cx.lineWidth = fresh ? 3 : 2; roundRect(x + CS * .1, y + CS * .1, CS * .8, CS * .8, CS * .16); cx.stroke();
+    cx.fillStyle = D.col; cx.font = `900 ${CS * .46}px "PingFang TC","Microsoft JhengHei",sans-serif`; cx.textAlign = "center"; cx.textBaseline = "middle";
+    cx.fillText(D.c, x + CS / 2, y + CS * .47);
+    for (let l = 0; l <= t.lv; l++) { cx.beginPath(); cx.arc(x + CS / 2 + (l - t.lv / 2) * CS * .16, y + CS * .8, CS * .05, 0, 7); cx.fill(); }
+    if (fresh) { cx.fillStyle = "rgba(255,255,255,.85)"; cx.beginPath(); cx.arc(x + CS * .84, y + CS * .16, CS * .07, 0, 7); cx.fill(); }
+  }
+  if (opts.range != null && tw[opts.range]) {
+    const i = opts.range, t = tw[i], D = TW[t.t];
+    cx.strokeStyle = "rgba(255,255,255,.5)"; cx.fillStyle = "rgba(255,255,255,.06)"; cx.lineWidth = 1.5;
+    cx.beginPath(); cx.arc((i % COLS) * CS + CS / 2, Math.floor(i / COLS) * CS + CS / 2, px(D.rng + 300 * t.lv), 0, 7); cx.fill(); cx.stroke();
+    cx.strokeStyle = "#fff"; cx.lineWidth = 2; cx.strokeRect((i % COLS) * CS + 1, Math.floor(i / COLS) * CS + 1, CS - 2, CS - 2);
+  }
+}
+function roundRect(x, y, w, h, r) { cx.beginPath(); cx.moveTo(x + r, y); cx.arcTo(x + w, y, x + w, y + h, r); cx.arcTo(x + w, y + h, x, y + h, r); cx.arcTo(x, y + h, x, y, r); cx.arcTo(x, y, x + w, y, r); cx.closePath(); }
+function drawUnits(b, alpha) {
+  for (const u of b.units) {
+    const D = UN[u.u], p = posAt(u.pd + (u.d - u.pd) * alpha), X = px(p[0]), Y = px(p[1]), rr = px(D.r) * .8;
+    cx.fillStyle = D.col;
+    if (D.air) { cx.beginPath(); cx.moveTo(X, Y - rr * 1.2); cx.lineTo(X + rr * 1.1, Y + rr * .8); cx.lineTo(X - rr * 1.1, Y + rr * .8); cx.closePath(); cx.fill(); }
+    else { cx.beginPath(); cx.arc(X, Y, rr, 0, 7); cx.fill(); }
+    if (u.en) { cx.strokeStyle = "#e0574b"; cx.lineWidth = 1.5; cx.stroke(); }
+    if (UN[u.u].arm) { cx.strokeStyle = "#dfe6ee"; cx.lineWidth = 2; cx.beginPath(); cx.arc(X, Y, rr + 2, 0, 7); cx.stroke(); }
+    if (u.slowT > b.tick) { cx.fillStyle = "rgba(130,205,244,.45)"; cx.beginPath(); cx.arc(X, Y, rr + 3, 0, 7); cx.fill(); }
+    if (u.hp < u.mh) {
+      const w = CS * .6; cx.fillStyle = "rgba(0,0,0,.6)"; cx.fillRect(X - w / 2, Y - rr - 7, w, 4);
+      cx.fillStyle = u.hp / u.mh > .5 ? "#7fd36b" : u.hp / u.mh > .25 ? "#e8c04a" : "#e0574b"; cx.fillRect(X - w / 2, Y - rr - 7, w * Math.max(0, u.hp / u.mh), 4);
+    }
+  }
+}
+function drawFx(b) {
+  const T = b.tick;
+  for (const f of b.fx) {
+    const age = T - f.t; if (age > 8) continue;
+    const a = 1 - age / 8;
+    cx.globalAlpha = a;
+    if (f.k === "shot") { cx.strokeStyle = f.col; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(px(f.x0), px(f.y0)); cx.lineTo(px(f.x), px(f.y)); cx.stroke(); }
+    else if (f.k === "boom") { cx.fillStyle = f.col; cx.beginPath(); cx.arc(px(f.x), px(f.y), px(950) * (.4 + age / 10), 0, 7); cx.globalAlpha = a * .45; cx.fill(); }
+    else if (f.k === "zap") { cx.strokeStyle = f.col; cx.lineWidth = 2.5; cx.beginPath(); f.pts.forEach(([x, y], j) => j ? cx.lineTo(px(x), px(y)) : cx.moveTo(px(x), px(y))); cx.stroke(); }
+    else if (f.k === "heal") { cx.strokeStyle = "#b8f5b0"; cx.lineWidth = 2; cx.beginPath(); cx.arc(px(f.x), px(f.y), px(1300) * (age / 8), 0, 7); cx.stroke(); }
+    else if (f.k === "die") { cx.fillStyle = f.col; for (let k = 0; k < 5; k++) { const ang = k * 1.256 + f.t; cx.fillRect(px(f.x) + Math.cos(ang) * age * 2.5, px(f.y) + Math.sin(ang) * age * 2.5, 3, 3); } }
+    else if (f.k === "leak") { cx.fillStyle = "#e0574b"; cx.globalAlpha = a * .35; cx.fillRect(0, 0, COLS * CS, ROWS * CS); }
+    cx.globalAlpha = 1;
+  }
+}
+
+/* 戰鬥動畫：用 resolve() 存下來的開打前狀態，同一套公式再算一次（畫出來的跟結算的一定一樣） */
+function startAnim() {
+  const L = G.last;
+  UI.anim = { r: L.r, b: L.snaps.map(s => new Battle(s.tw, s.q, s.chill, true)), acc: 0, prev: performance.now(), leakSeen: [0, 0], killSeen: [0, 0] };
+  UI.sel = null; UI.tw = null; UI.view = "me";
+  sndHorn(); render(); requestAnimationFrame(frame);
+}
+function frame(now) {
+  const A = UI.anim; if (!A) return;
+  const dt = Math.min(100, now - A.prev); A.prev = now;
+  A.acc += dt * UI.speed * TPS / 1000;
+  let steps = 0;
+  while (A.acc >= 1 && steps < 200) { A.acc -= 1; steps++; for (const b of A.b) if (!b.done) b.step(); }
+  const mine = A.b[me()];
+  if (mine.leaked > A.leakSeen[me()]) { A.leakSeen[me()] = mine.leaked; sndLeak(); }
+  if (mine.kills > A.killSeen[me()]) { A.killSeen[me()] = mine.kills; sndPop(); }
+  draw(Math.min(1, A.acc)); drawBar();
+  if (A.b.every(b => b.done)) { endAnim(); return; }
+  requestAnimationFrame(frame);
+}
+function endAnim() {
+  const A = UI.anim; if (!A) return;
+  UI.anim = null; S.shown = A.r; save();
+  const L = G.last, m = me(), r0 = L.res[m], r1 = L.res[1 - m];
+  toast(r0.leaked ? `漏了 ${r0.leaked} 隻，城牆 −${r0.leak}；賞金 +${r0.bounty}` : `全部守住！賞金 +${r0.bounty}` + (r1.leak ? `｜對手城牆 −${r1.leak}` : ""), 3500);
+  if (over()) finish(); else render();
+}
+function skipAnim() { if (!UI.anim) return; for (const b of UI.anim.b) run(b); endAnim(); }
+
+function draw(alpha) {
+  sizeCanvasIfNeeded();
+  const m = me(), opp = 1 - m;
+  if (UI.anim) {
+    const k = UI.view === "me" ? m : opp, b = UI.anim.b[k];
+    drawBoard(G.last.snaps[k].tw);
+    drawUnits(b, alpha || 0); drawFx(b);
+    return;
+  }
+  if (UI.view === "opp") { drawBoard(G.p[opp].tw); return; }
+  const { P } = preview();
+  const fresh = new Set(Object.keys(P.tw).filter(i => !G.p[m].tw[i]).map(Number));
+  const selCard = UI.sel !== null ? P.hand[UI.sel] : null;
+  drawBoard(P.tw, { hl: selCard && CARDS[selCard].k === 0, fresh, range: UI.tw });
+}
+let lastW = 0;
+function sizeCanvasIfNeeded() { if (cv.clientWidth !== lastW) { lastW = cv.clientWidth; sizeCanvas(); } }
+window.addEventListener("resize", () => { lastW = 0; draw(); });
+
+function toast(t, ms) {
+  const el = $("toast"); el.textContent = t; el.hidden = false; el.style.opacity = 1;
+  clearTimeout(UI.toastT); UI.toastT = setTimeout(() => { el.style.opacity = 0; UI.toastT = setTimeout(() => el.hidden = true, 300); }, ms || 1800);
+}
+
+function drawBar() {
+  const m = me(), P = UI.anim ? null : preview().P, O = G.p[1 - m];
+  let hpM = G.p[m].hp, hpO = O.hp;
+  if (UI.anim) { hpM = G.last.hp[m] - UI.anim.b[m].leak; hpO = G.last.hp[1 - m] - UI.anim.b[1 - m].leak; }
+  const rd = UI.anim ? UI.anim.r : G.r;
+  const oppReady = !UI.anim && !over() && submitted(1 - m) ? ' <span class="ready">✓ 準備好了</span>' : "";
+  $("bar").innerHTML = `<div class="side"><span class="rd">第 ${rd} 回合</span><span>❤ <b>${Math.max(0, P ? P.hp : hpM)}</b></span>` +
+    (P ? `<span>💰 <b>${P.gold}</b></span><span>收入 <b>+${P.inc}</b></span>` : "") +
+    `</div><div class="side"><span>對手 ❤ <b>${Math.max(0, hpO)}</b></span>${P ? `<span>收入 +${O.inc}</span>` : ""}${oppReady}</div>`;
+}
+
+function cardEl(k, extra, P) {
+  const b = document.createElement("button");
+  b.className = `card k${CARDS[k].k}` + (extra || "");
+  b.innerHTML = `<span class="cost">${cardCost(k, P)} 金</span><span class="ch">${cardChar(k)}</span><span class="nm">${cardName(k)}</span>`;
+  return b;
+}
+function cardDesc(k) {
+  const C = CARDS[k];
+  if (C.k === 0) { const D = TW[k]; return `${D.n}：傷害 ${D.dmg}、射程 ${(D.rng / 1000).toFixed(1)} 格` + (D.splash ? "、範圍爆炸、打不到飛的" : "") + (D.slow ? "、緩速" : "") + (D.chain ? `、連鎖 ${D.chain} 隻` : "") + (D.pierce ? "、無視護甲" : "") + "。點空地蓋下去"; }
+  if (C.k === 1) { const U = UN[k]; return `${U.n} ×${C.n}：血 ${U.hp}` + (U.arm ? `、護甲 ${U.arm}` : "") + (U.air ? "、會飛" : "") + (U.heal ? "、會幫隊友補血" : "") + (U.dmg > 1 ? `、進城扣 ${U.dmg}` : "") + `；派出後收入 +${C.inc}`; }
+  return `${C.nm}：${C.d}`;
+}
+
+function render() {
+  if (!G) return;
+  const m = me(), O = over();
+  document.querySelectorAll("#modeSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === S.mode)));
+  document.querySelectorAll("#lvlSeg button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.lv === S.level)));
+  document.querySelectorAll("#sndSeg button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.s === S.snd)));
+  document.querySelectorAll("#viewSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === UI.view)));
+  $("aiOpts").hidden = S.mode !== "ai";
+  $("netBox").hidden = S.mode !== "online";
+  $("score").innerHTML = S.mode === "ai" ? `<span>勝 <b>${S.score.w}</b></span><span>敗 <b>${S.score.l}</b></span><span>和 <b>${S.score.d}</b></span>` : "";
+  drawBar();
+  const planning = !UI.anim && !O, mine = submitted(m), canPlan = planning && !mine && UI.view === "me";
+  const { P, ok } = preview();
+  // 選新卡
+  const dr = $("draft");
+  if (canPlan && !P.drafted && P.offer.length) {
+    dr.hidden = false; dr.innerHTML = `<div class="label">選一張新卡加進牌組（這回合就能用）</div><div class="row"></div>`;
+    const row = dr.querySelector(".row");
+    P.offer.forEach((k, j) => { const c = cardEl(k); c.title = cardDesc(k); c.onclick = () => { S.plan.push({ a: "d", k: j }); UI.sel = null; save(); render(); toast(cardDesc(k), 2600); }; row.appendChild(c); });
+    const sk = document.createElement("button"); sk.className = "btn"; sk.textContent = "不要"; sk.onclick = () => { S.plan.push({ a: "d", k: -1 }); save(); render(); }; row.appendChild(sk);
+  } else dr.hidden = true;
+  // 手牌
+  const hand = $("hand"); hand.innerHTML = "";
+  if (planning && UI.view === "me") {
+    P.hand.forEach((k, h) => {
+      const c = cardEl(k, (P.used[h] ? " used" : "") + (P.gold < cardCost(k, P) ? " poor" : ""), P);
+      c.setAttribute("aria-pressed", String(UI.sel === h));
+      c.disabled = !canPlan || !!P.used[h] || (CARDS[k].k === 1 && P.rd === 1);
+      if (CARDS[k].k === 1 && P.rd === 1) c.classList.add("used");
+      c.onclick = () => { UI.sel = UI.sel === h ? null : h; UI.tw = null; render(); };
+      hand.appendChild(c);
+    });
+  }
+  // 說明列
+  const info = $("info"); info.innerHTML = "";
+  if (UI.anim) {
+    const s = G.last.sends;
+    info.innerHTML = `<span>你派出：${s[m].length ? s[m].map(cardName).join("、") : "沒有"}</span><span>對手派來：${s[1 - m].length ? s[1 - m].map(cardName).join("、") : "沒有"}</span>`;
+  } else if (planning && UI.view === "opp") {
+    const Q = G.p[1 - m], cnt = {};
+    for (const i in Q.tw) cnt[Q.tw[i].t] = (cnt[Q.tw[i].t] || 0) + 1;
+    info.innerHTML = `<span>對手目前的塔（這回合新蓋的開打才看得到）：${Object.keys(cnt).length ? Object.entries(cnt).map(([t, n]) => TW[t].n + "×" + n).join("、") : "還沒有"}</span>` +
+      `<span>兵營 ${Q.bar} 級</span>` + (Q.last && Q.last.length ? `<span>上回合他派了：${Q.last.map(cardName).join("、")}</span>` : "");
+  } else if (canPlan && UI.sel !== null) {
+    const k = P.hand[UI.sel];
+    info.innerHTML = `<span>${cardDesc(k)}</span>`;
+    if (CARDS[k].k !== 0) {
+      const b = document.createElement("button"); b.className = "btn primary"; b.textContent = CARDS[k].k === 1 ? `派出（${cardCost(k, P)} 金）` : `使用（${cardCost(k, P)} 金）`;
+      b.disabled = P.gold < cardCost(k, P);
+      b.onclick = () => { if (tryAct({ a: CARDS[k].k === 1 ? "t" : "x", h: UI.sel })) { UI.sel = null; sndPlace(); render(); } };
+      info.appendChild(b);
+    }
+  } else if (canPlan && UI.tw !== null && P.tw[UI.tw]) {
+    const t = P.tw[UI.tw], D = TW[t.t];
+    info.innerHTML = `<span><b>${D.n} ${t.lv + 1} 級</b>：傷害 ${Math.floor(D.dmg * LVM[t.lv] / 100)}、射程 ${((D.rng + 300 * t.lv) / 1000).toFixed(1)} 格</span>`;
+    if (t.lv < MAXLV) { const b = document.createElement("button"); b.className = "btn primary"; b.textContent = `升級（${upCost(t)} 金）`; b.disabled = P.gold < upCost(t); b.onclick = () => { if (tryAct({ a: "u", i: UI.tw })) { sndPlace(); render(); } }; info.appendChild(b); }
+    const sb = document.createElement("button"); sb.className = "btn"; sb.textContent = `賣掉（+${Math.floor(t.inv * 7 / 10)}）`;
+    sb.onclick = () => { if (tryAct({ a: "s", i: UI.tw })) { UI.tw = null; render(); } }; info.appendChild(sb);
+  } else if (canPlan) {
+    info.innerHTML = P.rd === 1 ? `<span><b>第 1 回合是準備回合</b>：雙方都還不能派兵，先選卡、蓋塔。綠色的塔點空地蓋下去。</span>` : `<span>選一張牌：綠色的塔點空地蓋，紅色的兵派去打對手，黃色是計策。點自己的塔可以升級或賣掉。</span>`;
+    const kb = document.createElement("button"); kb.className = "btn"; kb.textContent = `兵營 ${P.bar} 級 → 升級（${barCost(P)} 金）`; kb.title = `派出去的兵血量永久 +${TUNE.bar}%`;
+    kb.disabled = P.gold < barCost(P); kb.onclick = () => { if (tryAct({ a: "k" })) { sndPlace(); toast(`兵營 ${P.bar + 1} 級：你的兵血量 +${TUNE.bar * (P.bar + 1)}%`); render(); } }; info.appendChild(kb);
+  }
+  if (planning && UI.view === "me" && (P.sends.length || P.drum || P.chill)) {
+    const ch = document.createElement("div"); ch.className = "chips";
+    ch.innerHTML = `<span class="label">這回合派出：</span>` + P.sends.map(k => `<span class="chip">${UN[k].n}×${CARDS[k].n}</span>`).join("") + (P.drum ? `<span class="chip">戰鼓</span>` : "") + (P.chill ? `<span class="chip">寒霜</span>` : "");
+    info.appendChild(ch);
+  }
+  // 控制列
+  const ctl = $("ctl"); ctl.innerHTML = "";
+  const btn = (txt, cls, fn, dis) => { const b = document.createElement("button"); b.className = "btn " + (cls || ""); b.textContent = txt; b.onclick = fn; b.disabled = !!dis; ctl.appendChild(b); return b; };
+  if (UI.anim) {
+    [1, 2, 4].forEach(s => { const b = btn("×" + s, "", () => { UI.speed = s; render(); }); b.setAttribute("aria-pressed", String(UI.speed === s)); if (UI.speed === s) b.classList.add("primary"); });
+    const sp = document.createElement("span"); sp.className = "grow"; ctl.appendChild(sp);
+    btn("跳過", "", skipAnim);
+  } else if (planning) {
+    btn("復原", "", () => { S.plan.pop(); UI.sel = null; UI.tw = null; save(); render(); }, !canPlan || !S.plan.length);
+    btn("重來", "", () => { S.plan = []; UI.sel = null; UI.tw = null; save(); render(); }, !canPlan || !S.plan.length);
+    const sp = document.createElement("span"); sp.className = "grow"; ctl.appendChild(sp);
+    if (mine) btn(S.mode === "online" ? "取消準備" : "等待中…", "", cancelReady, S.mode !== "online" || submitted(1 - m));
+    else btn("準備好了 ✓", "primary", ready);
+  } else if (O) btn("再來一局", "primary", () => $("btnNew").onclick());
+  // 狀態
+  const msg = $("msg"), sub = $("sub");
+  if (O) { msg.textContent = O.w === -1 ? "平手" : O.w === m ? "你贏了！" : "你輸了"; sub.textContent = `打到第 ${G.last ? G.last.r : G.r} 回合`; }
+  else if (UI.anim) { msg.textContent = "開打！"; sub.textContent = "左右切換可以看對手那邊的戰況"; }
+  else if (S.mode === "online" && !(NETP && NETP.active())) { msg.textContent = "連線對戰：開房間，或輸入對方的房號"; sub.textContent = ""; }
+  else if (mine) { msg.textContent = "等對手出牌…"; sub.textContent = S.mode === "online" && !(NETP && NETP.connected()) ? "對手還沒連上" : ""; }
+  else { msg.textContent = `第 ${G.r} 回合：出牌`; sub.textContent = S.mode === "ai" ? `對手：電腦（${LVNAME[S.level]}）` : "對手看不到你出什麼，開打時才會揭曉"; }
+  $("btnGiveUp").disabled = !!O || (S.mode === "online" && !(NETP && NETP.active()));
+  draw();
+}
+function tryAct(a) {
+  const { P } = preview();
+  if (!act(P, a)) { toast("金幣不夠或不能放這裡"); return false; }
+  S.plan.push(a); save(); return true;
+}
+
+cv.addEventListener("click", e => {
+  if (UI.anim || over() || UI.view !== "me" || submitted(me())) return;
+  const r = cv.getBoundingClientRect(), x = Math.floor((e.clientX - r.left) / CS), y = Math.floor((e.clientY - r.top) / CS);
+  if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return;
+  const i = y * COLS + x, { P } = preview();
+  if (UI.sel !== null && CARDS[P.hand[UI.sel]].k === 0 && buildable(P, i)) {
+    if (tryAct({ a: "b", h: UI.sel, i })) { UI.sel = null; UI.tw = i; sndPlace(); }
+  } else if (P.tw[i]) { UI.tw = UI.tw === i ? null : i; UI.sel = null; }
+  else { UI.tw = null; }
+  render();
+});
+
+/* 回合流程 */
+function ready() {
+  const m = me(), r = G.r;
+  S.moves = S.moves.filter(x => !(x.r === r && x.s === m)).concat([{ r, s: m, p: S.plan.slice() }]);
+  if (S.mode === "ai") S.moves.push({ r, s: 1 - m, p: aiPlan(G, 1 - m, S.level) });
+  UI.sel = null; UI.tw = null;
+  after(true);
+}
+function cancelReady() {
+  if (S.mode !== "online" || submitted(1 - me())) return;
+  S.moves = S.moves.filter(x => !(x.r === G.r && x.s === me()));
+  after(true);
+}
+function after(push) {
+  const r0 = G.r;
+  rebuild(); save();
+  if (push && S.mode === "online" && NETP) NETP.push();
+  if (G.last && G.last.r > S.shown && G.last.r >= r0 - 0) { startAnim(); return; }
+  render();
+}
+function finish() {
+  const O = over(), m = me();
+  if (S.mode === "ai" && !S.counted) { S.counted = 1; if (O.w === -1) S.score.d++; else if (O.w === m) S.score.w++; else S.score.l++; }
+  save();
+  $("fx").innerHTML = `<div class="stamp"><span class="big">${O.w === -1 ? "平手" : O.w === m ? "勝" : "敗"}</span><span class="small">${O.resign ? (O.w === m ? "對方認輸" : "你認輸") : O.w === m ? "對手的城被攻破了" : O.w === -1 ? "兩座城同時倒下" : "城牆被攻破了"}</span></div>`;
+  render();
+}
+function newMatch() {
+  S.moves = []; S.cfg = { seed: (Math.random() * 2 ** 31) | 0 }; S.plan = []; S.planR = 0; S.shown = 0; S.resign = null; S.counted = 0;
+  UI.anim = null; UI.sel = null; UI.tw = null; UI.view = "me"; G = null; gKey = "";
+  $("fx").innerHTML = ""; rebuild(); save(); render();
+}
+function ask(text, fn) {
+  $("confirm").hidden = false; $("confirmText").textContent = text;
+  $("confirmYes").onclick = () => { $("confirm").hidden = true; fn(); };
+  $("confirmNo").onclick = () => { $("confirm").hidden = true; };
+}
+
+const bind = (sel, fn) => document.querySelectorAll(sel + " button").forEach(b => b.onclick = () => fn(b.dataset));
+bind("#viewSeg", d => { UI.view = d.v; UI.sel = null; UI.tw = null; render(); });
+bind("#lvlSeg", d => { S.level = +d.lv; save(); render(); });
+bind("#sndSeg", d => { S.snd = +d.s; save(); render(); });
+bind("#modeSeg", d => {
+  if (d.mode === S.mode) return;
+  if (S.mode === "online" && NETP && NETP.active()) NETP.leave();
+  S.mode = d.mode; UI.anim = null; newMatch();
+});
+
+/* ───────── 連線對戰（net.js）：moves = 每回合每人一份出牌；兩邊同時送可能互相蓋掉 → 合併後少了的再補送 ───────── */
+let known = { seed: null, m: {} };
+function mergeMoves(list) {
+  if (known.seed !== S.cfg.seed) known = { seed: S.cfg.seed, m: {} };
+  for (const x of list) known.m[x.r + ":" + x.s] = known.m[x.r + ":" + x.s] || x;
+  return Object.values(known.m).sort((a, b) => a.r - b.r || a.s - b.s);
+}
+function onlineApply(st, remote) {
+  const cfg = st.cfg || S.cfg;
+  if (!cfg || cfg.seed !== S.cfg.seed) { S.cfg = cfg || { seed: 1 }; S.plan = []; S.planR = 0; S.shown = 0; S.counted = 0; G = null; gKey = ""; UI.anim = null; $("fx").innerHTML = ""; known = { seed: null, m: {} }; }
+  const inc = st.moves || [];
+  if (!inc.length && S.moves.length && cfg.seed === S.cfg.seed && !remote) { }
+  let merged;
+  if (!inc.length) { known = { seed: S.cfg.seed, m: {} }; merged = []; } else merged = mergeMoves(S.moves.concat(inc));
+  const needPush = remote && merged.length > inc.length;
+  S.moves = merged;
+  S.resign = st.over && st.over.resign ? st.over : null;
+  const wasOver = !!$("fx").innerHTML;
+  if (!G || S.moves.length < +gKey.split("|")[1]) { G = null; gKey = ""; }
+  rebuild(); save();
+  if (needPush && NETP) setTimeout(() => NETP.push(), 50);
+  if (UI.anim) return;
+  if (G.last && G.last.r > S.shown) { startAnim(); return; }
+  if (over() && !wasOver) finish(); else render();
+}
+NETP = NetPlay.widget({
+  game: "fengtd", el: $("netBox"), sides: ["藍旗", "紅旗"],
+  adapter: {
+    getState: () => ({ moves: S.moves.slice(), over: S.resign || (G && G.over) || null, cfg: S.cfg }),
+    setState: onlineApply,
+    turnSeat: () => (submitted(0) ? 1 : 0),
+    undoFor: () => S.moves.slice(),
+    newCfg: () => ({ seed: (Math.random() * 2 ** 31) | 0 }),
+    resignOver: seat => ({ w: 1 - seat, resign: true }),
+    onEnter() { S.mode = "online"; UI.anim = null; save(); render(); },
+    onLeave() { S.mode = "ai"; newMatch(); },
+  },
+  onWantOnline() { S.mode = "online"; render(); },
+  onRender() { render(); },
+});
+$("btnNew").onclick = () => {
+  if (S.mode === "online") { if (NETP.active()) ask("跟對方要求重新開一局？", () => NETP.request("new")); return; }
+  if (!over() && S.moves.length) ask("放棄這局、重新開始？", newMatch); else newMatch();
+};
+$("btnGiveUp").onclick = () => {
+  if (over()) return;
+  if (S.mode === "online") { if (NETP.active()) ask("認輸這局？", () => NETP.resign()); return; }
+  ask("認輸這局？", () => { S.resign = { w: 1 - me(), resign: true }; UI.anim = null; finish(); });
+};
+
+(function init() {
+  let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
+  S = Object.assign(defaults(), st || {});
+  if (S.mode === "online") { S.mode = "ai"; }           // 連線房間由 net.js 自己接回
+  try { rebuild(); } catch (e) { S.moves = []; S.plan = []; G = null; gKey = ""; rebuild(); }
+  if (G.last && G.last.r > S.shown && !over()) S.shown = G.last.r;   // 重新整理不重播
+  if (over()) finish(); else render();
+})();
+</script>

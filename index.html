@@ -74,6 +74,7 @@ const ICON = {
   ooxx: `<rect width="64" height="64" fill="var(--panel)"/><g stroke="var(--muted)" stroke-width="2.4" stroke-linecap="round"><path d="M24 10V54M40 10V54M10 24H54M10 40H54"/></g><g stroke="#b0261d" stroke-width="3" stroke-linecap="round"><path d="M12 12L20 20M20 12L12 20M44 44L52 52M52 44L44 52"/></g><circle cx="32" cy="32" r="5" fill="none" stroke="#2e5fa8" stroke-width="3"/><circle cx="48" cy="16" r="5" fill="none" stroke="#2e5fa8" stroke-width="3"/>`,
   connect4: `<rect width="64" height="64" rx="6" fill="#2e5fa8"/>${[0, 1, 2, 3].map(r => [0, 1, 2, 3, 4].map(c => `<circle cx="${9 + c * 11.5}" cy="${12 + r * 13}" r="4.6" fill="${r === 3 && c < 4 ? "#e8b923" : r === 2 && c === 1 ? "#b0261d" : r === 3 && c === 4 ? "#b0261d" : "#dfe7f2"}"/>`).join("")).join("")}`,
   quoridor: `<rect width="64" height="64" fill="#d9c39a"/>${[0,1,2,3,4].map(r=>[0,1,2,3,4].map(c=>`<rect x="${3+c*12.4}" y="${3+r*12.4}" width="9.5" height="9.5" rx="1.5" fill="#c4a874"/>`).join("")).join("")}<rect x="14" y="26.5" width="22" height="3" rx="1" fill="#6b3f1d"/><rect x="38.5" y="14" width="3" height="22" rx="1" fill="#6b3f1d"/><circle cx="32" cy="57.5" r="4.6" fill="#b0261d"/><circle cx="32" cy="8" r="4.6" fill="#2e5fa8"/>`,
+  fengtd: `<rect width="64" height="64" fill="#18221d"/><path d="M14 4 V24 H50 V40 H14 V60" fill="none" stroke="#5e4b36" stroke-width="9" stroke-linejoin="round"/><rect x="26" y="9" width="12" height="12" rx="3" fill="#0f1512" stroke="#8fd17f" stroke-width="2"/><rect x="34" y="45" width="12" height="12" rx="3" fill="#0f1512" stroke="#eea153" stroke-width="2"/><circle cx="14" cy="11" r="3.4" fill="#e0574b"/><circle cx="43" cy="24" r="3.4" fill="#f0e6cc"/><path d="M32 15 L43 24" stroke="#8fd17f" stroke-width="1.6"/>`,
 };
 const GAMES = [
   ["east", "xiangqi", "xiangqi.html", "象棋", "楚河漢界", "紅黑對弈，長將、長捉、和棋都照規則判。", "xiangqi-v2"],
@@ -86,6 +87,7 @@ const GAMES = [
   ["light", "ooxx", "ooxx.html", "OOXX", "井字棋＋超級井字", "經典三連線；進階模式是 9 個井字組成的大井字。", "ooxx-v1"],
   ["light", "connect4", "connect4.html", "四子棋", "屏風式", "棋子從上面掉下去，橫、直、斜連成四個就贏。", "connect4-v1"],
   ["light", "quoridor", "quoridor.html", "步步為營", "牆壁棋", "先走到對面就贏；可以放牆擋路，但兩邊都會被擋到。", "quoridor-v1"],
+  ["light", "fengtd", "fengtd.html", "烽火對壘", "卡牌塔防", "蓋塔守城、派兵攻城，雙方同時出牌再一起開打。可以打電腦或連線對戰。", "fengtd-v1"],
 ];
 for (const [sec, ic, href, name, sub, desc, key] of GAMES) {
   let resume = "";
