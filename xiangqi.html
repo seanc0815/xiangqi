@@ -1053,6 +1053,7 @@ function renderPanel() {
   { const left = undoLeft(undoSide()); $("btnUndo").textContent = sandbox ? "退一步" : L < 0 ? "悔棋" : `悔棋 ${left}`; }
   $("btnUndo").disabled = sandbox ? !sandbox.moves.length || thinking : (thinking || view != null || !undoCount());
   $("btnHint").disabled = thinking || !myTurn();
+  if (typeof renderHintLabel === "function") renderHintLabel();
   $("btnNew").hidden = online;
   const busy = thinking || !!over || !n || view != null || !!sandbox || (online && !both);
   $("btnGiveUp").disabled = S.mode === "puzzle" ? (thinking || !!over || view != null) : busy;
@@ -1971,11 +1972,12 @@ $("btnHint").addEventListener("pointerdown", () => {
    棋盤上用很淡的小點標「動哪顆」、細圈標「走到哪」。家裡電腦只有你的 Tailscale 連得到，別人的手機開了也不會有東西。
    開／關的回饋只有一個字：「好。」＝開、「好」＝關。 */
 let pkKey = null, pkMove = null;
-const pkOn = () => { try { return localStorage.getItem("xiangqi-pk") === "1"; } catch (e) { return false; } };
+var pkOk = false;                                    // 最近一次真的從家裡電腦拿到建議 → 「提示」按鈕多一個句號（暗號：有在用）
+function pkOn() { try { return localStorage.getItem("xiangqi-pk") === "1"; } catch (e) { return false; } }
 function pkToggle() {
   const on = !pkOn();
   try { localStorage.setItem("xiangqi-pk", on ? "1" : "0"); } catch (e) { }
-  pkKey = null; pkMove = null; $("sub").textContent = on ? "好。" : "好"; drawPieces(); if (on) pkTick();
+  pkKey = null; pkMove = null; pkOk = false; $("sub").textContent = on ? "好。" : "好"; drawPieces(); renderHintLabel(); if (on) pkTick();
 }
 function pkTick() {
   if (!pkOn() || S.mode === "puzzle" || startB || sandbox || view != null || gameOver() || !myTurn()) return;
@@ -1987,8 +1989,12 @@ function pkTick() {
     .then(r => r.json()).then(r => {
       if (pkKey !== key || S.moves.join(",") !== key || !r.pick) return;
       const m = ofUci(r.pick); if (!E.legal(G.b.slice(), G.red).includes(m)) return;
-      pkMove = m; drawPieces();
-    }).catch(() => { if (pkKey === key) pkKey = null; });                  // 連不到：下次 render 再試
+      pkMove = m; pkOk = true; drawPieces(); renderHintLabel();
+    }).catch(() => { if (pkKey === key) pkKey = null; pkOk = false; renderHintLabel(); });   // 連不到：下次 render 再試
+}
+function renderHintLabel() {
+  const t = pkOn() && pkOk ? "提示。" : "提示";
+  if ($("btnHint").textContent !== t) $("btnHint").textContent = t;
 }
 for (const ev of ["pointerup", "pointercancel"]) $("btnHint").addEventListener(ev, () => clearTimeout(hintTimer));
 $("btnHint").addEventListener("contextmenu", e => e.preventDefault());
