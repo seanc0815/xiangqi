@@ -43,6 +43,42 @@
     }).catch(() => { });
   }
   function takeWarm() { const p = warmPeer; warmPeer = null; return p && !p.destroyed && !p.disconnected ? p : null; }
+  // 轉送（2026-10-30，Gabi：「連線也有點問題」）：PeerJS 內建的中繼伺服器（TURN）已經掛了，兩支手機只要有一邊在行動網路、
+  // 或某些 Wi-Fi 後面，點對點就連不上。現在多一條路：兩邊同時連公開的 MQTT 伺服器（兩家，任一家通就行），
+  // 點對點沒通的時候，訊息改走這裡。點對點通了就自動換回點對點。每則訊息本來就能重送（版本號、編號去重），兩家都收到也沒關係。
+  const MQTT_LIB = "https://cdn.jsdelivr.net/npm/mqtt@5.14.1/dist/mqtt.min.js";
+  const BROKERS = ["wss://broker.emqx.io:8084/mqtt", "wss://broker.hivemq.com:8884/mqtt"];
+  let mqttP = null;
+  function loadMqtt() {
+    if (window.mqtt) return Promise.resolve();
+    if (!mqttP) mqttP = new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = MQTT_LIB; s.async = true;
+      s.onload = () => res(); s.onerror = () => { mqttP = null; rej(new Error("mqtt")); };
+      document.head.appendChild(s);
+    });
+    return mqttP;
+  }
+  const noP2P = () => { try { return localStorage.getItem("bbx-nop2p") === "1"; } catch (e) { return false; } };   // 測試用：假裝點對點連不上
+  class Relay {
+    constructor(inbox, outbox, onMsg, onUp) {
+      Object.assign(this, { inbox, outbox, onMsg, onUp, cs: [], closed: false });
+      loadMqtt().then(() => {
+        if (this.closed) return;
+        for (const u of BROKERS) {
+          try {
+            const c = window.mqtt.connect(u, { protocolVersion: 4, reconnectPeriod: 4000, connectTimeout: 8000, keepalive: 30, clean: true });
+            c.on("connect", () => { c.subscribe(this.inbox, () => { if (!this.closed) this.onUp && this.onUp(); }); });
+            c.on("message", (t, buf) => { let m = null; try { m = JSON.parse(String(buf)); } catch (e) { } if (m && !this.closed) this.onMsg(m); });
+            c.on("error", () => { });
+            this.cs.push(c);
+          } catch (e) { }
+        }
+      }).catch(() => { });
+    }
+    send(o) { const s = JSON.stringify(o); for (const c of this.cs) if (c.connected) { try { c.publish(this.outbox, s); } catch (e) { } } }
+    close() { this.closed = true; for (const c of this.cs) { try { c.end(true); } catch (e) { } } this.cs = []; }
+  }
   const newCode = () => Array.from({ length: 4 }, () => CHARS[(Math.random() * CHARS.length) | 0]).join("");
   const ls = {
     get(k) { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } },
@@ -67,6 +103,7 @@
       Object.assign(this, {
         game, code, role, h, doc: { v: 0, data: null }, peer: null, conn: null, closed: false, last: 0, timer: null,
         gid: Math.random().toString(36).slice(2, 10), seq: 0, pending: [], seen: { g: null, s: 0 }, retryT: null, busy: null, fails: 0,
+        relay: null, relayAt: 0,
       });
       this.onVis = () => {
         if (document.visibilityState !== "visible" || this.closed || this.role !== "guest" || (this.conn && this.conn.open)) return;
@@ -87,7 +124,30 @@
       return this;
     }
     status(s, msg) { this.state = s; this.h.onStatus && this.h.onStatus(s, msg || ""); }
-    send(o, c) { c = c || this.conn; try { if (c && c.open) c.send(o); } catch (e) { } }
+    send(o, c) {
+      c = c || this.conn;
+      if (c && c.open) { try { c.send(o); } catch (e) { } }
+      else if (this.relay) this.relay.send(o);                                // 點對點沒通：走轉送
+    }
+    p2p() { return !!(this.conn && this.conn.open); }
+    relayLive() { return Date.now() - this.relayAt < 15000; }
+    viaRelay() { return !this.p2p() && this.relayLive(); }
+    startRelay() {
+      if (this.relay || this.closed) return;
+      const t = x => "bbx26/" + this.game + "/" + this.code + "/" + x, host = this.role === "host";
+      this.relay = new Relay(t(host ? "h" : "g"), t(host ? "g" : "h"), m => this.onRelay(m), () => {
+        if (this.role === "guest" && !this.p2p()) {                           // 訪客：轉送接上就打招呼、補送斷線時下的
+          this.relay.send({ t: "hello" });
+          for (const p of this.pending) this.relay.send({ t: "patch", g: this.gid, s: p.s, patch: p.patch });
+        }
+      });
+    }
+    onRelay(m) {
+      if (this.closed) return;
+      this.relayAt = Date.now();
+      if (!this.p2p() && this.state !== "connected") this.status("connected");
+      this.onData(m, null);
+    }
     docMsg() { return { t: "doc", v: this.doc.v, data: this.doc.data, ack: this.seen }; }
     fire(remote) { this.persist(); this.h.onDoc && this.h.onDoc(this.doc.data, remote); }
     startPing() {
@@ -95,11 +155,16 @@
       this.last = Date.now();
       this.timer = setInterval(() => {
         if (this.closed) return;
-        this.send({ t: "ping" });
         const c = this.conn;
+        if (this.p2p() || this.role === "guest" || this.relayAt) this.send({ t: "ping" });
         if (c && c.open && Date.now() - this.last > 15000) {
           this.onConnLost(c);
           try { c.close(); } catch (e) { }
+        } else if (this.role === "guest" && !this.p2p() && this.relayLive() && !this.busy && !this.retryT && Date.now() - (this.p2pTry || 0) > 30000) {
+          this.p2pTry = Date.now(); this.connectGuest(false).catch(() => { });   // 走轉送中：每 30 秒試一次點對點，通了就換回去
+        } else if (!this.p2p() && this.relayAt && !this.relayLive() && this.state === "connected") {   // 轉送也斷了
+          if (this.role === "host") this.status("waiting", "對方離線了，等他重新連上…");
+          else { this.status("reconnecting", "連線中斷，重新連線中…"); this.retry(1500); }
         }
       }, 4000);
     }
@@ -133,6 +198,7 @@
       }
     }
     attach(conn) {
+      if (noP2P()) { setTimeout(() => { try { conn.close(); } catch (e) { } }, 0); return; }
       conn.on("data", d => this.onData(d, conn));
       conn.on("open", () => {
         if (this.closed) { try { conn.close(); } catch (e) { } return; }
@@ -153,14 +219,15 @@
     onConnLost(c) {
       if (this.closed || (c && this.conn !== c)) return;                     // 舊的連線關掉不算
       this.conn = null;
-      if (this.role === "host") this.status("waiting", "對方離線了，等他重新連上…");
-      else { this.status("reconnecting", "連線中斷，重新連線中…"); this.retry(1500); }
+      if (this.role === "host") { if (this.relayLive()) this.status("connected"); else this.status("waiting", "對方離線了，等他重新連上…"); }
+      else { if (!this.relayLive()) this.status("reconnecting", "連線中斷，重新連線中…"); this.retry(this.relayLive() ? 15000 : 1500); }
     }
     retry(ms) {
       if (this.closed || this.retryT) return;
       this.retryT = setTimeout(() => { this.retryT = null; this.connectGuest(false).catch(() => { }); }, ms);
     }
     async startHost(initial, fresh) {
+      this.startRelay(); if (!this.timer) this.startPing();
       await loadLib();
       if (initial) { this.doc = { v: 1, data: initial }; this.persist(); }
       return new Promise((resolve, reject) => {
@@ -177,7 +244,8 @@
               if (fresh) { this.code = newCode(); open(); }                 // 新房號撞到 → 換一個
               else setTimeout(open, 4000);                                  // 重新整理：舊編號還沒釋放，等一下
             } else if (e && (e.type === "network" || e.type === "server-error" || e.type === "socket-error" || e.type === "socket-closed")) {
-              this.status(this.conn && this.conn.open ? "connected" : "error", "連不到連線伺服器，檢查一下網路");
+              const ok = this.p2p() || this.relayLive();
+              this.status(ok ? "connected" : "error", ok ? "" : "連不到連線伺服器，檢查一下網路");
               if (this.peer === p) setTimeout(() => { try { if (p.disconnected && !p.destroyed) p.reconnect(); } catch (x) { } }, 4000);
               reject && reject(e); reject = null;
             }
@@ -190,31 +258,41 @@
       if (this.closed) return Promise.resolve(this);
       if (this.conn && this.conn.open) return Promise.resolve(this);
       if (this.busy) return this.busy;                                        // 已經在連了，不再開第二條
-      this.status(first ? "connecting" : "reconnecting", first ? "連線中…" : "重新連線中…");
+      this.startRelay(); if (!this.timer) this.startPing();
+      if (!this.relayLive()) this.status(first ? "connecting" : "reconnecting", first ? "連線中…" : "重新連線中…");
+      const t0 = Date.now();
       this.busy = loadLib().then(() => new Promise((resolve, reject) => {
-        let done = false, c = null;
+        let done = false, c = null, poll = null;
         const finish = ok => {
           if (done) return;
-          done = true; this.busy = null; this.onPeerErr = null;
+          done = true; this.busy = null; this.onPeerErr = null; clearInterval(poll);
           if (ok) { resolve(this); return; }
+          if (this.relayAt > t0 || this.relayLive()) {                          // 點對點沒通，但轉送通了：先用轉送，晚點再試點對點
+            if (c && this.conn !== c) { try { c.close(); } catch (e) { } }
+            this.retry(15000); resolve(this); return;
+          }
           if (c) { if (this.conn === c) this.conn = null; try { c.close(); } catch (e) { } }   // 放棄的連線關掉，免得晚點才接上把好的踢掉
           if (++this.fails >= 3 && this.peer) { try { this.peer.destroy(); } catch (e) { } this.peer = null; this.fails = 0; }
           if (first) reject(new Error("notfound"));
           else { this.status("reconnecting", "重新連線中…"); this.retry(3000); resolve(this); }
         };
+        poll = setInterval(() => {                                              // 主機從轉送回話了：不用等點對點
+          if (done || !(this.relayAt > t0 && this.doc.data)) return;
+          clearInterval(poll); done = true; this.busy = null; this.onPeerErr = null; resolve(this);
+        }, 250);
         if (!this.peer || this.peer.destroyed) {
           const p = this.peer = takeWarm() || new window.Peer({ debug: 0 });
           p.on("error", e => { if (e && e.type === "peer-unavailable" && this.onPeerErr) this.onPeerErr(); });
           p.on("disconnected", () => { if (!this.closed && !p.destroyed) setTimeout(() => { try { if (p.disconnected && !p.destroyed) p.reconnect(); } catch (x) { } }, 2000); });
         }
-        this.onPeerErr = () => finish(false);
+        this.onPeerErr = () => setTimeout(() => finish(this.relayAt > t0), 2500);   // 找不到主機的點對點編號：再給轉送 2.5 秒
         const start = () => {
-          if (done || this.closed) return;
+          if (done || this.closed || noP2P()) return;
           c = this.peer.connect(this.pid(), { reliable: true });
           this.attach(c);
           c.on("open", () => finish(true));
         };
-        setTimeout(() => finish(!!(c && c.open)), 10000);
+        setTimeout(() => finish(!!(c && c.open) || this.relayAt > t0), 10000);
         if (this.peer.open) start(); else this.peer.once("open", start);
       }));
       return this.busy;
@@ -234,6 +312,7 @@
       try { document.removeEventListener("visibilitychange", this.onVis); } catch (e) { }
       try { this.conn && this.conn.close(); } catch (e) { }
       try { this.peer && this.peer.destroy(); } catch (e) { }
+      try { this.relay && this.relay.close(); } catch (e) { } this.relay = null;
     }
     dispose() { this.shut(); }       // 只關連線，不清掉存檔（試探房間失敗時用）
     close() { this.shut(); ss.del(this.key()); }
@@ -241,10 +320,10 @@
     // 對手還連著 → 把整份棋局交給他，他變成主機、房號不變；沒人 → 直接關，房號失效。存檔一律清掉，不會自動接回。
     leave() {
       if (this.closed) return;
-      const c = this.conn, live = !!(c && c.open);
+      const c = this.conn, live = !!(c && c.open) || this.relayLive();
       if (live && this.role === "host") this.send({ t: "handoff", v: this.doc.v, data: this.doc.data }, c);
       this.conn = null;
-      if (live) setTimeout(() => this.close(), 200); else this.close();     // 讓最後的訊息送出去
+      if (live) setTimeout(() => this.close(), 400); else this.close();     // 讓最後的訊息送出去
     }
     takeOver(m) {                    // 訪客收到主機交棒：接手當主機
       if (this.role !== "guest" || this.closed) return;
@@ -254,6 +333,7 @@
       clearTimeout(this.retryT); this.retryT = null; this.busy = null;
       const c = this.conn; this.conn = null; try { c && c.close(); } catch (e) { }
       try { this.peer && this.peer.destroy(); } catch (e) { } this.peer = null;
+      try { this.relay && this.relay.close(); } catch (e) { } this.relay = null; this.relayAt = 0;
       this.role = "host"; this.persist();
       this.status("waiting", "對方離開了，房間交給你；把房號給新對手就能繼續");
       setTimeout(() => { if (!this.closed) this.startHost(null, false).catch(() => { }); }, 500);
@@ -340,7 +420,7 @@
         enter(r); $("lnote").textContent = "";
       } catch (e) {
         r.close();
-        $("lnote").textContent = `連不到房間 ${code}：確認房號，或請對方保持網頁開著。（少數網路環境，例如某些行動網路，兩支手機沒辦法直接連線）`;
+        $("lnote").textContent = `連不到房間 ${code}：確認房號，或請對方保持網頁開著、網路正常。`;
       }
       $("join").disabled = false;
     }
@@ -360,7 +440,7 @@
       const other = seat === null ? "" : o.sides[1 - seat];
       $("who").textContent = seat === null ? "" : `你：${o.sides[seat]}｜對手：${other}`;
       if (d.moves && d.moves.length) swapNote = "";
-      $("rnote").textContent = msg || (st === "connected" && swapNote ? swapNote : st === "connected" ? "已連線" : st === "waiting" ? (room.role === "host" ? "等對方加入（對方輸入房號或點邀請連結）" : "") : st === "reconnecting" ? "重新連線中…" : st === "error" ? "連線伺服器連不上，檢查網路" : "連線中…");
+      $("rnote").textContent = msg || (st === "connected" && swapNote ? swapNote : st === "connected" ? (room.viaRelay() ? "已連線（經轉送）" : "已連線") : st === "waiting" ? (room.role === "host" ? "等對方加入（對方輸入房號或點邀請連結）" : "") : st === "reconnecting" ? "重新連線中…" : st === "error" ? "連線伺服器連不上，檢查網路" : "連線中…");
       const req = d.req;
       const ask = $("ask");
       const sw = $("swap"), fresh = !(d.moves && d.moves.length) || !!d.over;
