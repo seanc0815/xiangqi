@@ -413,6 +413,12 @@ function draw() {
       else el("circle", { cx: x + SQ / 2, cy: y + SQ / 2, r: 10, fill: "rgba(30, 90, 70, .6)" }, svg);
     }
   }
+  if (pkMove && pkKey === S.moves.join(",") && !S.over) {               // 即時輔助：要動的那顆右上角小點、要去的格子細框
+    const P = sq => { const v = view(sq); return [M0 + (v & 7) * SQ, M0 + (v >> 3) * SQ]; };
+    const [x1, y1] = P(pkMove.f), [x2, y2] = P(pkMove.t);
+    el("circle", { cx: x1 + SQ - 9, cy: y1 + 9, r: 5, fill: "#3b2a1a", "fill-opacity": ".8" }, svg);
+    el("rect", { x: x2 + 4, y: y2 + 4, width: SQ - 8, height: SQ - 8, rx: 6, fill: "none", stroke: "#3b2a1a", "stroke-width": 2.6, "stroke-opacity": ".75" }, svg);
+  }
   const lab = el("g", { fill: "#ecdcbf", "font-size": 13, "font-family": "system-ui,sans-serif", "text-anchor": "middle", "dominant-baseline": "central" }, svg);
   for (let k = 0; k < 8; k++) {
     const file = S.flipped ? 7 - k : k, rank = S.flipped ? k + 1 : 8 - k;
@@ -420,7 +426,7 @@ function draw() {
     el("text", { x: 12, y: M0 + k * SQ + SQ / 2 }, lab).textContent = rank;
   }
 }
-function render() { render0(); if (typeof onlineOverlay === "function" && NETP) onlineOverlay(); }
+function render() { render0(); if (typeof onlineOverlay === "function" && NETP) onlineOverlay(); if (typeof pkTick === "function") { pkTick(); pkSay(); renderHintLabel(); } }
 function render0() {
   draw();
   const pr = (s2, attr, val) => document.querySelectorAll(s2 + " button").forEach(b => b.setAttribute("aria-pressed", b.dataset[attr] === String(val)));
@@ -505,6 +511,9 @@ $("btnDraw").onclick = () => {
   });
 };
 $("btnHint").onclick = () => {
+  if (hintLong) { hintLong = false; return; }
+  if (pkOn() && pkMove && pkKey === S.moves.join(",")) { hint = { f: pkMove.f, t: pkMove.t, text: "建議：" + E.san(G.s, pkMove, G.legal) + "。" }; render(); return; }
+  if (S.mode === "online") { $("sub").textContent = "連線對戰不能用提示"; return; }
   if (thinking || S.over || !humanTurn()) return;
   thinking = true; render();
   const my = token;
@@ -567,7 +576,7 @@ function onlineOverlay() {
   if (!S.over) $("msg").textContent = !act ? "連線對戰：開房間，或輸入對方的房號" : !NETP.connected() ? "等對手連線…" : NETP.myTurn() ? "輪到你" : "等對手下…";
   $("btnUndo").disabled = !act || !S.moves.length || !!S.over;
   $("btnGiveUp").disabled = !act || !!S.over || !S.moves.length;
-  $("btnHint").disabled = true; $("btnDraw").disabled = !act || !!S.over || !S.moves.length;
+  $("btnHint").disabled = !act || !!S.over || !NETP.myTurn(); $("btnDraw").disabled = !act || !!S.over || !S.moves.length;
 }
 {
   const offNew = $("btnNew").onclick, offUndo = $("btnUndo").onclick, offGive = $("btnGiveUp").onclick;
@@ -583,4 +592,44 @@ function onlineOverlay() {
   try { G = replay(); } catch (e) { S.moves = []; S.over = null; G = replay(); }
   render(); if (!S.over) maybeAi();
 })();
+
+/* 即時輔助（2026-10-30，比照象棋）：長按「提示」2 秒＝開／關（只記在這個瀏覽器）。開著時每次輪到你，自動問家裡電腦的 Stockfish（1.5 秒），
+   棋盤上小點＋細框標最佳走法，狀態第二行寫「建議：Nf3。」；連到家裡電腦時「提示」按鈕是「提示。」。家裡電腦只有 Gabi 的 Tailscale 連得到。 */
+var pkKey = null, pkMove = null, pkOk = false, hintLong = false, hintTimer = 0;
+function pkOn() { try { return localStorage.getItem("chess-pk") === "1"; } catch (e) { return false; } }
+const PK_URL = /^(8797)$/.test(location.port) || location.hostname.endsWith(".ts.net") ? "" : "https://desktop-drh5eot.tailb653f2.ts.net:8443";
+const pkSq = i => "abcdefgh"[i & 7] + (8 - (i >> 3));
+const pkUci = ms => { const [f, rest] = ms.split("-"), t = parseInt(rest), p = rest.replace(/^\d+/, ""); return pkSq(+f) + pkSq(t) + p.toLowerCase(); };
+function pkToggle() {
+  const on = !pkOn();
+  try { localStorage.setItem("chess-pk", on ? "1" : "0"); } catch (e) { }
+  pkKey = null; pkMove = null; pkOk = false; render(); $("sub").textContent = on ? "好。" : "好";
+}
+function pkTick() {
+  if (!pkOn() || S.over || thinking || !humanTurn()) return;
+  const key = S.moves.join(",");
+  if (pkKey === key) return;
+  pkKey = key; pkMove = null;
+  fetch(PK_URL + "/api/think", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ game: "chess", moves: S.moves.map(pkUci), ms: 1500, mode: "full" }) })
+    .then(r => r.json()).then(r => {
+      if (pkKey !== key || S.moves.join(",") !== key || !r.pick) return;
+      const m = G.legal.find(x => pkSq(x.f) + pkSq(x.t) + (x.p || "").toLowerCase() === r.pick);
+      if (!m) return;
+      pkMove = m; pkOk = true; draw(); pkSay(); renderHintLabel();
+    }).catch(() => { if (pkKey === key) pkKey = null; pkOk = false; renderHintLabel(); });
+}
+function pkSay() {
+  if (!pkOn() || !pkMove || pkKey !== S.moves.join(",") || S.over || !humanTurn()) return;
+  $("sub").textContent = "建議：" + E.san(G.s, pkMove, G.legal) + "。";
+}
+function renderHintLabel() { const t = pkOn() && pkOk ? "提示。" : "提示"; if ($("btnHint").textContent !== t) $("btnHint").textContent = t; }
+$("btnHint").addEventListener("pointerdown", () => {
+  clearTimeout(hintTimer); hintLong = false;
+  if (S.over || !humanTurn()) return;
+  hintTimer = setTimeout(() => { hintLong = true; pkToggle(); }, 2000);
+});
+for (const ev of ["pointerup", "pointercancel"]) $("btnHint").addEventListener(ev, () => clearTimeout(hintTimer));
+$("btnHint").addEventListener("contextmenu", e => e.preventDefault());
+render();
 </script>
