@@ -90,6 +90,7 @@
         <div class="vs">vs</div>
         <div><div class="who" id="who1"></div><div class="card p1" id="card1"></div></div>
       </div>
+      <button class="btn primary" id="btnStart" hidden style="font-size:20px;padding:12px 40px">開始</button>
       <form class="entry" id="entry" autocomplete="off">
         <input id="word" maxlength="16" placeholder="輸入一個詞" enterkeyhint="send" aria-label="你的詞">
         <button class="btn primary" id="btnSend" type="submit">說！</button>
@@ -117,7 +118,7 @@
         <li>不一樣就再想一輪：試著想一個能把<b>剛剛那兩個詞</b>連起來的詞，例如「海」和「火」→ 都想到「熱帶」或「夕陽」？</li>
         <li>一直到兩個人說出<b>同一個詞</b>就成功，輪數越少越厲害。</li>
         <li>說過的詞（不管誰說的）不能再說。</li>
-        <li>有設思考時間的話，翻開後開始倒數；時間到，已經打好的詞會自動送出。</li>
+        <li>有設思考時間的話，每一輪兩個人都按「開始」才一起倒數（同機按一次就好）；時間到，已經打好的詞會自動送出。</li>
         <li>雙人同機：玩家一先打（字會遮起來），交給玩家二打，兩個都好了才翻開。</li>
       </ul>
     </details>
@@ -129,7 +130,7 @@
 <script>
 const STORE = "lingxi-v1";
 const $ = id => document.getElementById(id);
-let S = null, NETP = null, pending = null, revealAt = { r: 0, t: 0 }, shownR = 0, autoSent = 0;
+let S = null, NETP = null, pending = null, goAt = { r: 0, t: 0 }, shownR = 0, autoSent = 0;   // goAt：這一輪看到「開始」的時間（10-30 Gabi：倒數太快，改成按開始才算）
 const NAMES = ["玩家一", "玩家二"];
 function defaults() { return { mode: "local", think: 30, moves: [], cfg: { seed: 1, think: 30 }, over: null, tally: { games: 0, rounds: 0, best: null } }; }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(Object.assign({}, S, { over: S.over }))); } catch (e) { } }
@@ -138,7 +139,7 @@ const norm = w => String(w || "").normalize("NFKC").replace(/[\s\p{P}\p{S}]/gu, 
 /* 局面：每一輪兩個人各一個詞 */
 function rounds() {
   const by = {};
-  for (const m of S.moves) (by[m.r] = by[m.r] || [null, null])[m.s] = m.w;
+  for (const m of S.moves) if (!m.go) (by[m.r] = by[m.r] || [null, null])[m.s] = m.w;
   const out = [];
   for (let r = 1; by[r]; r++) out.push({ r, w: by[r] });
   return out;
@@ -148,7 +149,17 @@ function state() {
   const done = rs.filter(x => x.w[0] != null && x.w[1] != null);
   const win = done.find(x => norm(x.w[0]) === norm(x.w[1]));
   const cur = win ? null : (rs.find(x => x.w[0] == null || x.w[1] == null) || { r: done.length + 1, w: [null, null] });
-  return { rs, done, win, cur };
+  const go = [0, 1].map(k => !!cur && S.moves.some(m => m.go && m.r === cur.r && m.s === k));
+  const started = !!cur && (S.mode === "online" ? go[0] && go[1] : go[0] || go[1]);   // 連線：兩個人都按了才開始（Gabi 10-30）
+  return { rs, done, win, cur, started, go };
+}
+function startRound() {
+  const st = state(); if (!st.cur || st.started || S.over) return;
+  if (S.mode === "online") { const seat = me(); if (seat == null || !NETP.connected() || st.go[seat]) return; S.moves.push({ r: st.cur.r, s: seat, go: 1 }); }
+  else S.moves.push({ r: st.cur.r, s: 0, go: 1 });
+  save(); render();
+  if (S.mode === "online" && NETP) NETP.push();
+  setTimeout(() => $("word").focus(), 50);
 }
 const thinkSecs = () => (S.mode === "online" ? (S.cfg && S.cfg.think) || 0 : S.think);
 const me = () => S.mode === "online" ? (NETP && NETP.mySeat()) : null;
@@ -206,16 +217,16 @@ function render() {
   $("pair").hidden = !last;
   if (last) {
     $("card0").textContent = last.w[0]; $("card1").textContent = last.w[1];
-    if (last.r > shownR) { shownR = last.r; for (const c of [$("card0"), $("card1")]) { c.classList.remove("flip"); void c.offsetWidth; c.classList.add("flip"); } revealAt = { r: last.r, t: Date.now() }; }
+    if (last.r > shownR) { shownR = last.r; for (const c of [$("card0"), $("card1")]) { c.classList.remove("flip"); void c.offsetWidth; c.classList.add("flip"); } }
   }
-  if (!last) revealAt = { r: 0, t: revealAt.r === 0 && revealAt.t ? revealAt.t : Date.now() };
+  if (st.cur && st.started && goAt.r !== st.cur.r) goAt = { r: st.cur.r, t: Date.now() };
 
   // 狀態與輸入
   let msg = "", sub = "", canType = false, secret = false;
   if (S.over && !S.over.win) { msg = "這局放棄了"; sub = "按「新局」再來"; }
   else if (S.over) { msg = `成功！第 ${S.over.rounds} 輪`; sub = `兩個人都說「${S.over.word}」`; }
   else if (online && !act) { msg = "連線對戰：開房間，或輸入對方的房號"; }
-  else if (online && !NETP.connected()) { msg = "等對手連線…"; if (!st.done.length) revealAt.t = Date.now(); }   // 第一輪等兩個人都到了才開始倒數
+  else if (online && !NETP.connected()) { msg = "等對手連線…"; }
   else if (online) {
     const mine = st.cur.w[seat], theirs = st.cur.w[1 - seat];
     if (mine == null) { msg = `第 ${st.cur.r} 輪：說一個詞`; sub = theirs != null ? "對方已經說好了" : st.cur.r === 1 ? "隨便一個詞都可以" : "想一個能連起上面兩個詞的詞"; canType = true; }
@@ -225,8 +236,15 @@ function render() {
     msg = `第 ${st.cur.r} 輪：${NAMES[who]}說一個詞`; sub = who === 1 ? "玩家一已經說好了（字是遮起來的）" : st.cur.r === 1 ? "隨便一個詞都可以；打完交給玩家二" : "想一個能連起上面兩個詞的詞";
     canType = true; secret = true;
   }
+  const needGo = canType && thinkSecs() > 0 && !st.started;                    // 有限時：先按「開始」才倒數、才能打
+  const waitGo = needGo && online && st.go[seat];
+  if (needGo) {
+    msg = waitGo ? "等對方按開始…" : `第 ${st.cur.r} 輪：準備好就按開始`;
+    sub = waitGo ? "兩個人都按了才開始倒數" : online && st.go[1 - seat] ? "對方已經按開始了" : st.cur.r === 1 ? "兩個人都按開始，才會一起倒數" : "先看看上面兩個詞，想好方向再按";
+  }
   $("msg").textContent = msg; $("sub").textContent = sub;
-  $("entry").hidden = !canType; $("word").classList.toggle("secret", secret);
+  $("btnStart").hidden = !needGo || waitGo;
+  $("entry").hidden = !canType || needGo; $("word").classList.toggle("secret", secret);
   $("btnGiveUp").disabled = !!S.over || !S.moves.length || (online && !act);
   const t = S.tally;
   $("score").innerHTML = `成功 <b>${t.games}</b> 局` + (t.games ? `　平均 <b>${(t.rounds / t.games).toFixed(1)}</b> 輪　最快 <b>${t.best}</b> 輪` : "");
@@ -237,7 +255,8 @@ function tick() {
   const st = state(), lim = thinkSecs();
   const typing = !$("entry").hidden;
   if (!lim || S.over || !typing || !st.cur) { $("big").textContent = ""; $("big").classList.remove("low"); if (!$("hintline").dataset.keep) $("hintline").textContent = S.over ? "" : typing && !lim ? "想好了就按「說！」" : ""; return; }
-  const left = Math.ceil(lim - (Date.now() - revealAt.t) / 1000);
+  if (goAt.r !== st.cur.r) return;
+  const left = Math.ceil(lim - (Date.now() - goAt.t) / 1000);
   $("big").textContent = Math.max(0, left); $("big").classList.toggle("low", left <= 3);
   $("hintline").textContent = left > 0 ? "想一想，時間到會自動送出" : "時間到！";
   if (left <= 0 && autoSent !== st.cur.r * 10 + (S.mode === "online" ? me() : st.cur.w[0] == null ? 0 : 1)) {
@@ -251,7 +270,7 @@ $("entry").onsubmit = e => { e.preventDefault(); send($("word").value); setTimeo
 function ask(text, yes) { pending = yes; $("confirmText").textContent = text; $("confirm").hidden = false; }
 $("confirmYes").onclick = () => { $("confirm").hidden = true; const f = pending; pending = null; if (f) f(); };
 $("confirmNo").onclick = () => { $("confirm").hidden = true; pending = null; };
-function newGame() { S.moves = []; S.over = null; shownR = 0; revealAt = { r: 0, t: Date.now() }; autoSent = 0; $("fx").innerHTML = ""; $("word").value = ""; save(); render(); }
+function newGame() { S.moves = []; S.over = null; shownR = 0; goAt = { r: 0, t: 0 }; autoSent = 0; $("fx").innerHTML = ""; $("word").value = ""; save(); render(); }
 $("btnNew").onclick = () => {
   if (S.mode === "online") { if (NETP.active()) ask("跟對方要求重新開一局？", () => NETP.request("new")); return; }
   if (S.moves.length && !S.over) ask("放棄這局、重新開始？", newGame); else newGame();
@@ -266,18 +285,19 @@ document.querySelectorAll("#modeSeg button").forEach(b => b.onclick = () => {
   if (S.mode === "online" && NETP && NETP.active()) NETP.leave();
   S.mode = b.dataset.mode; newGame();
 });
-document.querySelectorAll("#thinkSeg button").forEach(b => b.onclick = () => { S.think = +b.dataset.t; if (S.mode !== "online") revealAt.t = Date.now(); save(); render(); });
+document.querySelectorAll("#thinkSeg button").forEach(b => b.onclick = () => { S.think = +b.dataset.t; save(); render(); });
+$("btnStart").onclick = startRound;
 
 /* 連線：moves = 每輪每人一個詞；兩邊同時送可能互相蓋掉 → 合併，少了的再補送 */
 let known = { seed: null, m: {} };
 function mergeMoves(list) {
   if (known.seed !== S.cfg.seed) known = { seed: S.cfg.seed, m: {} };
-  for (const x of list) known.m[x.r + ":" + x.s] = known.m[x.r + ":" + x.s] || x;
+  for (const x of list) { const k = x.r + ":" + x.s + (x.go ? "g" : ""); known.m[k] = known.m[k] || x; }
   return Object.values(known.m).sort((a, b) => a.r - b.r || a.s - b.s);
 }
 function onlineApply(st, remote) {
   const cfg = st.cfg || S.cfg || { seed: 1, think: 30 };
-  if (!S.cfg || cfg.seed !== S.cfg.seed) { S.cfg = cfg; S.moves = []; S.over = null; shownR = 0; revealAt = { r: 0, t: Date.now() }; autoSent = 0; $("fx").innerHTML = ""; known = { seed: null, m: {} }; }
+  if (!S.cfg || cfg.seed !== S.cfg.seed) { S.cfg = cfg; S.moves = []; S.over = null; shownR = 0; goAt = { r: 0, t: 0 }; autoSent = 0; $("fx").innerHTML = ""; known = { seed: null, m: {} }; }
   const inc = st.moves || [];
   const merged = inc.length ? mergeMoves(S.moves.concat(inc)) : (known = { seed: S.cfg.seed, m: {} }, []);
   const needPush = remote && merged.length > inc.length;
@@ -307,7 +327,7 @@ NETP = NetPlay.widget({
   let st = null; try { st = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { }
   S = Object.assign(defaults(), st || {});
   if (S.mode === "online") { S.mode = "local"; S.moves = []; S.over = null; }      // 連線房間由 net.js 自己接回
-  shownR = state().done.length; revealAt = { r: shownR, t: Date.now() };
+  shownR = state().done.length;
   if (S.over && S.over.win) stamp("心有靈犀", `第 ${S.over.rounds} 輪・都說「${S.over.word}」`);
   render();
 })();
