@@ -868,6 +868,11 @@ function drawPieces(landed) {
     if (faceOn() && red === topIsRed()) txt.setAttribute("transform", "rotate(180)");
     if (up) el("circle", { r: 28.5, fill: "none", stroke: "var(--jade)", "stroke-width": "3" }, g);
   }
+  if (pkMove != null && pkKey === S.moves.join(",") && !sandbox && view == null) {   // 即時輔助：淡淡的，只有知道的人看得懂
+    const [x1, y1] = disp((pkMove / 100) | 0), [x2, y2] = disp(pkMove % 100);
+    el("circle", { cx: x1 + 21, cy: y1 - 21, r: 5, fill: "var(--grid)", "fill-opacity": ".85" }, layerPieces);
+    el("circle", { cx: x2, cy: y2, r: 31, fill: "none", stroke: "var(--grid)", "stroke-width": "2.6", "stroke-opacity": ".8" }, layerPieces);
+  }
   for (const m of targets) {
     const t = m % 100, [x, y] = disp(t);
     if (b[t] === ".") el("circle", { cx: x, cy: y, r: 7, fill: "var(--jade)", "fill-opacity": ".85" }, layerPieces);
@@ -1068,6 +1073,7 @@ function lastText(check) {
 }
 function render(landed) {
   drawPieces(landed); renderPanel();
+  if (typeof pkTick === "function") pkTick();
   const keep = sandbox ? !!sbOver() : (!!gameOver() && view == null);
   if (!keep) { const f = $("fx").querySelector(".mate, .stale"); if (f) f.remove(); }   // 悔棋、新局、復盤 → 收掉絕殺章
 }
@@ -1957,22 +1963,35 @@ $("btnHint").onclick = () => {
 let hintLong = false, hintTimer = 0;
 $("btnHint").addEventListener("pointerdown", () => {
   clearTimeout(hintTimer); hintLong = false;
-  if (S.mode === "online" || S.mode === "puzzle" || startB || sandbox || view != null || !myTurn()) return;
-  hintTimer = setTimeout(() => { hintLong = true; pikaHint(); }, 2000);
+  if (S.mode === "puzzle" || startB || sandbox || view != null || !myTurn()) return;
+  hintTimer = setTimeout(() => { hintLong = true; pkToggle(); }, 2000);
 });
+/* 即時輔助（2026-10-30，Gabi：「把這個輔助用到棋盤小館上 只有我能用 實時顯示」）
+   長按「提示」2 秒＝開／關（只記在這支手機）。開著時，每次輪到你，自動問家裡電腦的 Pikafish（全力 1.5 秒），
+   棋盤上用很淡的小點標「動哪顆」、細圈標「走到哪」。家裡電腦只有你的 Tailscale 連得到，別人的手機開了也不會有東西。
+   開／關的回饋只有一個字：「好。」＝開、「好」＝關。 */
+let pkKey = null, pkMove = null;
+const pkOn = () => { try { return localStorage.getItem("xiangqi-pk") === "1"; } catch (e) { return false; } };
+function pkToggle() {
+  const on = !pkOn();
+  try { localStorage.setItem("xiangqi-pk", on ? "1" : "0"); } catch (e) { }
+  pkKey = null; pkMove = null; $("sub").textContent = on ? "好。" : "好"; drawPieces(); if (on) pkTick();
+}
+function pkTick() {
+  if (!pkOn() || S.mode === "puzzle" || startB || sandbox || view != null || gameOver() || !myTurn()) return;
+  const key = S.moves.join(",");
+  if (pkKey === key) return;
+  pkKey = key; pkMove = null;
+  fetch((PIKA ? "" : pikaUrl() || "https://desktop-drh5eot.tailb653f2.ts.net:8443") + "/api/think", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fen: START_FEN, moves: S.moves.map(uciOf), ms: 1500, mode: "full" }) })
+    .then(r => r.json()).then(r => {
+      if (pkKey !== key || S.moves.join(",") !== key || !r.pick) return;
+      const m = ofUci(r.pick); if (!E.legal(G.b.slice(), G.red).includes(m)) return;
+      pkMove = m; drawPieces();
+    }).catch(() => { if (pkKey === key) pkKey = null; });                  // 連不到：下次 render 再試
+}
 for (const ev of ["pointerup", "pointercancel"]) $("btnHint").addEventListener(ev, () => clearTimeout(hintTimer));
 $("btnHint").addEventListener("contextmenu", e => e.preventDefault());
-function pikaHint() {
-  const my = token; $("btnHint").disabled = true; $("sub").textContent = "幫你想一下…";
-  const ac = new AbortController(); setTimeout(() => ac.abort(), 6000);        // 連不到家裡電腦（別人的手機、沒開 Tailscale）→ 6 秒內退回內建引擎
-  fetch((PIKA ? "" : pikaUrl() || "https://desktop-drh5eot.tailb653f2.ts.net:8443") + "/api/think", { method: "POST", signal: ac.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fen: START_FEN, moves: S.moves.map(uciOf), ms: 2000, mode: "full" }) })
-    .then(r => r.json()).then(r => {
-      if (my !== token || !r.pick) throw 0;
-      const m = ofUci(r.pick); if (!E.legal(G.b.slice(), G.red).includes(m)) throw 0;
-      hint = m; drawPieces(); renderPanel();
-      $("sub").textContent = "建議：" + notation(G.b, m) + "。";   // 句號＝Pikafish（只有自己知道）
-    }).catch(() => { if (my === token) jsHint(my); });
-}
 function jsHint(my) {
   think(G.b.slice(), G.red, 1, r => {
     if (my !== token || !r || r.move == null) return;
