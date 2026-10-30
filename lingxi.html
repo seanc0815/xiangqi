@@ -105,7 +105,7 @@
       <div class="seg" id="modeSeg"><button data-mode="local">雙人同機</button><button data-mode="online">連線對戰</button></div></div>
     <div class="group" id="netBox" hidden></div>
     <div class="group"><span class="label">每輪思考時間</span>
-      <div class="seg" id="thinkSeg"><button data-t="0">不限</button><button data-t="10">10 秒</button><button data-t="20">20 秒</button><button data-t="30">30 秒</button></div>
+      <div class="seg" id="thinkSeg"><button data-t="0">不限</button><button data-t="15">15 秒</button><button data-t="30">30 秒</button><button data-t="60">60 秒</button></div>
       <span class="note" id="thinkNote">時間到時，你已經打好的詞會自動送出。連線時下一局才會換成新的設定。</span></div>
     <div class="actions">
       <button class="btn primary" id="btnNew">新局</button><button class="btn" id="btnGiveUp">放棄這局</button>
@@ -131,7 +131,7 @@ const STORE = "lingxi-v1";
 const $ = id => document.getElementById(id);
 let S = null, NETP = null, pending = null, revealAt = { r: 0, t: 0 }, shownR = 0, autoSent = 0;
 const NAMES = ["玩家一", "玩家二"];
-function defaults() { return { mode: "local", think: 20, moves: [], cfg: { seed: 1, think: 20 }, over: null, tally: { games: 0, rounds: 0, best: null } }; }
+function defaults() { return { mode: "local", think: 30, moves: [], cfg: { seed: 1, think: 30 }, over: null, tally: { games: 0, rounds: 0, best: null } }; }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(Object.assign({}, S, { over: S.over }))); } catch (e) { } }
 const norm = w => String(w || "").normalize("NFKC").replace(/[\s\p{P}\p{S}]/gu, "").toLowerCase();
 
@@ -276,7 +276,7 @@ function mergeMoves(list) {
   return Object.values(known.m).sort((a, b) => a.r - b.r || a.s - b.s);
 }
 function onlineApply(st, remote) {
-  const cfg = st.cfg || S.cfg || { seed: 1, think: 20 };
+  const cfg = st.cfg || S.cfg || { seed: 1, think: 30 };
   if (!S.cfg || cfg.seed !== S.cfg.seed) { S.cfg = cfg; S.moves = []; S.over = null; shownR = 0; revealAt = { r: 0, t: Date.now() }; autoSent = 0; $("fx").innerHTML = ""; known = { seed: null, m: {} }; }
   const inc = st.moves || [];
   const merged = inc.length ? mergeMoves(S.moves.concat(inc)) : (known = { seed: S.cfg.seed, m: {} }, []);
