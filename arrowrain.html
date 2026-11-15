@@ -7,34 +7,41 @@ html,body{margin:0;height:100%;background:#1b2430;overflow:hidden;touch-action:n
 canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
 #ui{position:fixed;inset:0;pointer-events:none}
 .hud{position:absolute;top:10px;left:12px;right:12px;display:flex;justify-content:space-between;align-items:center;color:#fff;font-weight:800;font-size:16px;text-shadow:0 1px 3px #000a}
-.stats{position:absolute;top:38px;left:12px;right:12px;display:flex;gap:8px;color:#fff;font-weight:800;font-size:13px}
+.stats{position:absolute;top:38px;left:12px;right:12px;display:flex;flex-wrap:wrap;gap:6px;color:#fff;font-weight:800;font-size:13px}
 .stats span{background:#0f172acc;padding:3px 8px;border-radius:8px}
-.bar{position:absolute;top:66px;left:12px;right:12px;height:6px;border-radius:3px;background:#ffffff30;overflow:hidden}
+.bar{position:absolute;top:92px;left:12px;right:12px;height:6px;border-radius:3px;background:#ffffff30;overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:#fca5a5}
-.panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(86vw,360px);background:#0f1722f2;border-radius:20px;padding:22px 20px;color:#fff;text-align:center;pointer-events:auto;box-shadow:0 12px 40px #000a}
+.panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(88vw,370px);max-height:88vh;overflow:auto;background:#0f1722f2;border-radius:20px;padding:20px 18px;color:#fff;text-align:center;pointer-events:auto;box-shadow:0 12px 40px #000a}
 .panel h1{margin:0 0 4px;font-size:32px;letter-spacing:2px}
 .panel h2{margin:0 0 6px;font-size:26px}
-.panel p{margin:6px 0;color:#c9d3e0;font-size:15px;line-height:1.55}
-.btn{display:block;width:100%;margin-top:12px;padding:13px;border:0;border-radius:12px;font-size:18px;font-weight:800;background:#3b82f6;color:#fff;font-family:inherit}
+.panel p{margin:6px 0;color:#c9d3e0;font-size:14.5px;line-height:1.55}
+.btn{display:block;width:100%;margin-top:10px;padding:13px;border:0;border-radius:12px;font-size:18px;font-weight:800;background:#3b82f6;color:#fff;font-family:inherit}
+.btn.endless{background:#7c3aed}
 .btn.alt{background:#283548;font-size:16px}
 .stars{font-size:38px;letter-spacing:6px;color:#ffd34d;margin:4px 0}
 .dim{color:#4b5563}
 .hidden{display:none}
 .home{display:block;margin-top:14px;color:#93c5fd;font-size:15px;text-decoration:none}
-.tag{display:inline-block;padding:2px 8px;border-radius:8px;margin:2px;font-weight:800;font-size:13px}
+.tag{display:inline-block;padding:2px 7px;border-radius:8px;margin:2px;font-weight:800;font-size:12.5px}
 </style></head><body>
 <canvas id="c"></canvas>
 <div id="ui">
   <div class="hud"><span id="hLv">第 1 關</span><span id="hHp">❤ 10</span></div>
-  <div class="stats"><span id="sMulti">箭 ×1</span><span id="sRate">射速 4.0</span><span id="sDmg">傷害 1</span></div>
+  <div class="stats"><span id="sMen">弓手 ×1</span><span id="sWpn">長弓</span><span id="sRate">射速 100%</span><span id="sDmg">傷害 100%</span></div>
   <div class="bar"><i id="hBar"></i></div>
   <div class="panel" id="pMenu">
     <h1>箭雨守關</h1>
-    <p>左右拖曳移動，弓箭會自動往前射。<br>紅色人潮會朝你衝過來，被碰到就扣血。</p>
-    <p>兩側通道的補給箱要射爆才拿得到：<br>
-      <span class="tag" style="background:#2563eb">+1 箭</span><span class="tag" style="background:#059669">射速</span><span class="tag" style="background:#d97706">傷害</span><br>
-      去射箱子時中間會漏人，自己拿捏！</p>
-    <button class="btn" id="bStart">開始 第 1 關</button>
+    <p>左右拖曳移動，弓箭自動往前射。<br>紅色人潮朝你衝過來，漏一個扣一滴血。</p>
+    <p>兩側疊滿方塊，射碎了就拿到：<br>
+      <span class="tag" style="background:#2563eb">+1 弓手</span>
+      <span class="tag" style="background:#9333ea">換武器</span>
+      <span class="tag" style="background:#059669">射速</span>
+      <span class="tag" style="background:#d97706">傷害</span>
+      <span class="tag" style="background:#e11d48">補血</span><br>
+      去打方塊時中間會漏人，自己拿捏！</p>
+    <p style="font-size:13px">敵人：紅兵、盔甲兵（灰頭）、疾行兵（橘、很快）、巨漢（大隻很硬）；無盡模式隨時會冒出紫色精英。<br>武器：長弓、連弩（超快）、散射弓（一次三支）、穿雲箭（一箭貫穿）、火箭（爆炸）、雷擊弩（電一串）</p>
+    <button class="btn" id="bStart">關卡模式 第 1 關</button>
+    <button class="btn endless" id="bEndless">無盡模式</button>
     <a class="home hidden" id="homeLink" href="./">← 回棋盤小館</a>
   </div>
   <div class="panel hidden" id="pWin">
@@ -43,19 +50,21 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
     <p id="wInfo"></p>
     <button class="btn" id="bNext">下一關</button>
     <button class="btn alt" id="bRetryW">重玩這關</button>
+    <button class="btn alt" id="bMenuW">回選單</button>
   </div>
   <div class="panel hidden" id="pLose">
-    <h2>城破了…</h2>
+    <h2 id="lTitle">城破了…</h2>
     <p id="lInfo"></p>
     <button class="btn" id="bRetry">再試一次</button>
+    <button class="btn alt" id="bMenuL">回選單</button>
   </div>
 </div>
 <script>
 "use strict";
-/* ───── 畫布與投影（跟人海衝鋒同一套） ───── */
+/* ───── 畫布與投影 ───── */
 const cv = document.getElementById("c"), g = cv.getContext("2d");
 let W = 0, H = 0, F = 0, HOR = 0, camZ = -16;
-const LANE = 2.3, EDGE = 3.8, CAMH = 12, CAMBACK = 16, SIDE_X = 3.12, FAR = 46;   // 鏡頭拉遠拉高：遠方的人群才看得到
+const LANE = 2.3, EDGE = 3.8, CAMH = 12, CAMBACK = 16, SIDE_X = 3.12, FAR = 46;
 function resize() {
   const d = Math.min(2, window.devicePixelRatio || 1);
   W = innerWidth; H = innerHeight;
@@ -68,7 +77,7 @@ addEventListener("resize", resize); resize();
 function proj(x, z, y = 0) { const d = z - camZ; if (d < 0.6) return null; const s = F / d; return { x: W / 2 + x * s, y: HOR + (CAMH - y) * s, s }; }
 
 /* ───── 存檔、音效 ───── */
-const KEY = "arrowrain-v1", save = { level: 1 };
+const KEY = "arrowrain-v1", save = { level: 1, bestKills: 0, bestTime: 0 };
 try { Object.assign(save, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) { }
 const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) { } };
 let AC = null;
@@ -77,142 +86,269 @@ function beep(f, d = 0.06, v = 0.04, type = "square") {
   try { const o = AC.createOscillator(), a = AC.createGain(); o.type = type; o.frequency.value = f; a.gain.value = v; a.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d); o.connect(a); a.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) { }
 }
 
-/* ───── 關卡設定 ───── */
-function levelCfg(n) {
-  return {
-    total: Math.min(520, 60 + 26 * n),                 // 這關一共多少敵人
-    row: Math.min(10, 3 + Math.floor(n * 0.4)),       // 一次冒出幾個（這關後段的量；開頭只有 4 成）
-    gap: Math.max(0.4, 0.72 - n * 0.015),              // 幾秒冒一排
-    speed: Math.min(3.4, 2.4 + n * 0.05),              // 走路速度
-    armored: Math.min(0.35, 0.06 + n * 0.025),         // 盔甲兵比例（3 血）
-    bossHp: 80 + 55 * n, bossSpeed: Math.min(1.8, 1.0 + n * 0.04),
-    crateGap: Math.max(3.2, 4.6 - n * 0.06),
-  };
-}
-const CRATE = {
-  multi: { label: "+1 箭", col: "#2563eb", apply: () => P.multi = Math.min(12, P.multi + 1) },
-  rate: { label: "射速", col: "#059669", apply: () => P.rate = Math.min(14, P.rate * 1.25) },
-  dmg: { label: "傷害", col: "#d97706", apply: () => P.dmg += 1 },
+/* ───── 武器 ───── */
+const WEAPONS = {
+  bow:     { name: "長弓",   col: "#a16207", arrow: "#fef3c7", rate: 1.0, dmg: 1.0, spread: 1, pierce: 0, splash: 0, chain: 0 },
+  xbow:    { name: "連弩",   col: "#0e7490", arrow: "#a5f3fc", rate: 2.3, dmg: 0.55, spread: 1, pierce: 0, splash: 0, chain: 0 },
+  fan:     { name: "散射弓", col: "#15803d", arrow: "#bbf7d0", rate: 0.9, dmg: 0.75, spread: 3, pierce: 0, splash: 0, chain: 0 },
+  pierce:  { name: "穿雲箭", col: "#4338ca", arrow: "#c7d2fe", rate: 0.8, dmg: 1.2, spread: 1, pierce: 4, splash: 0, chain: 0 },
+  fire:    { name: "火箭",   col: "#c2410c", arrow: "#fdba74", rate: 0.7, dmg: 1.1, spread: 1, pierce: 0, splash: 1.0, chain: 0 },
+  thunder: { name: "雷擊弩", col: "#a16207", arrow: "#fde047", rate: 0.75, dmg: 1.0, spread: 1, pierce: 0, splash: 0, chain: 3 },
 };
+const WKEYS = Object.keys(WEAPONS).filter(k => k !== "bow");
+
+/* ───── 兩側方塊：左邊一整排 +弓手，右邊武器／強化 ───── */
+const BLOCK = {
+  men:   { col: "#2563eb", label: b => "+" + b.v + " 弓手", apply: b => { P.men = Math.min(80, P.men + b.v); } },
+  wpn:   { col: "#9333ea", label: b => WEAPONS[b.w].name, apply: b => { P.wpn = b.w; } },
+  rate:  { col: "#059669", label: () => "射速 +15%", apply: () => { P.rateMul = Math.min(5, P.rateMul + 0.15); } },   // 加法、最多 500%
+  dmg:   { col: "#d97706", label: () => "傷害 +25%", apply: () => { P.dmgMul += 0.25; } },
+  heal:  { col: "#e11d48", label: () => "補血 +3", apply: () => { P.hp = Math.min(P.hpMax, P.hp + 3); } },
+};
+const BLOCK_GAP = 1.45, BELT = 2.4;
+let leftN = 0, rightN = 0;
+function dps() {                // 目前每秒總傷害（方塊血量跟著它走：越強，下一個強化越難打碎）
+  const Wp = WEAPONS[P.wpn];
+  return 4 * Wp.rate * P.rateMul * Wp.dmg * Wp.spread * P.dmgMul * P.men;
+}
+const lvF = () => mode === "endless" ? 1 + T / 240 : 1 + save.level * 0.04;   // 時間越久／關卡越後面，同樣火力要打更久
+function nextLeft() {          // 左排：一直是 +弓手，偶爾 +2／+3
+  leftN++;
+  const v = leftN % 9 === 0 ? 3 : leftN % 4 === 0 ? 2 : 1;
+  const hp = Math.max(3, Math.round(dps() * 0.45 * v * lvF()));
+  return { side: -1, t: "men", v, hp, hp0: hp };
+}
+function nextRight() {         // 右排：武器、射速、傷害、補血輪著來
+  rightN++;
+  const cyc = ["wpn", "rate", "dmg", "wpn", "heal", "rate", "dmg"], t = cyc[(rightN - 1) % cyc.length];
+  let w = null;
+  if (t === "wpn") { const opts = WKEYS.filter(k => k !== P.wpn); w = opts[Math.floor(Math.random() * opts.length)]; }
+  const secs = t === "wpn" ? 1.4 : t === "heal" ? 1.1 : 0.9;
+  const hp = Math.max(8, Math.round(dps() * secs * lvF()));
+  return { side: 1, t, w, hp, hp0: hp };
+}
+
+/* ───── 關卡／無盡的出怪節奏 ───── */
+function levelCfg(n) {
+  return { total: Math.min(520, 60 + 26 * n), row: Math.min(10, 3 + Math.floor(n * 0.4)), gap: Math.max(0.4, 0.72 - n * 0.015),
+           speed: Math.min(3.4, 2.4 + n * 0.05), armored: Math.min(0.4, 0.06 + n * 0.025), armHp: 3 + Math.floor(n / 3), hp: 1 + Math.floor(n / 4),
+           bossHp: Math.round(80 + 55 * n + 4 * n * n), bossSpeed: Math.min(1.8, 1.0 + n * 0.04) };
+}
+function endlessCfg(t) {          // 無盡：每 75 秒一隻魔王，越撐越難
+  return { row: Math.min(14, 3 + Math.floor(t / 16)), gap: Math.max(0.3, 0.72 - t * 0.0035), speed: Math.min(4.2, 2.4 + t * 0.011),
+           armored: Math.min(0.5, 0.05 + t * 0.003), armHp: 3 + Math.floor(t / 25) + Math.floor(Math.pow(t / 60, 2)), hp: 1 + Math.floor(t / 45) + Math.floor(Math.pow(t / 120, 2)),
+           run: Math.min(0.25, t / 600), brute: Math.min(0.08, Math.max(0, (t - 40) / 1500)) };   // 越後面每個人越硬
+}
 
 /* ───── 狀態 ───── */
-let st = "menu", C = null, P = null, foes = [], arrows = [], crates = [], parts = [], pops = [], boss = null;
-let T = 0, spawnAcc = 0, crateAcc = 0, fireAcc = 0, spawned = 0, crateN = 0, flash = 0, shake = 0, endT = 0, kills = 0;
-function startLevel() {
-  C = levelCfg(save.level);
-  P = { x: 0, hp: 10, multi: 1, rate: 4, dmg: 1 };
-  foes = []; arrows = []; crates = []; parts = []; pops = []; boss = null;
-  T = 0; spawnAcc = 0; crateAcc = C.crateGap - 0.3; fireAcc = 0; spawned = 0; crateN = 0; kills = 0;
+let mode = "stage", st = "menu", C = null, P = null, foes = [], arrows = [], blocks = [], parts = [], pops = [], bolts = [], boss = null;
+let T = 0, spawnAcc = 0, fireAcc = 0, spawned = 0, flash = 0, shake = 0, endT = 0, kills = 0, bossN = 0, nextBossT = 75, nextEliteT = 25;
+function freshPlayer() { return { x: 0, hp: 10, hpMax: 10, men: mode === "stage" ? 1 + Math.floor((save.level - 1) / 3) : 1, wpn: "bow", rateMul: 1, dmgMul: 1 }; }   // 後面的關卡一開始多帶幾個弓手
+function start(m) {
+  mode = m; C = m === "stage" ? levelCfg(save.level) : null;
+  P = freshPlayer(); foes = []; arrows = []; blocks = []; parts = []; pops = []; bolts = []; boss = null;
+  T = 0; spawnAcc = 0; fireAcc = 0; spawned = 0; kills = 0; bossN = 0; nextBossT = 75; nextEliteT = 20 + Math.random() * 15; leftN = 0; rightN = 0;
+  for (let z = 6; z < FAR; z += BLOCK_GAP) { blocks.push(Object.assign(nextLeft(), { z })); blocks.push(Object.assign(nextRight(), { z: z + BLOCK_GAP * 0.5 })); }
   st = "play"; show(null); hud();
 }
 function show(id) { for (const p of ["pMenu", "pWin", "pLose"]) document.getElementById(p).classList.toggle("hidden", p !== id); }
+const fmtT = t => Math.floor(t / 60) + ":" + String(Math.floor(t % 60)).padStart(2, "0");
 function hud() {
-  document.getElementById("hLv").textContent = "第 " + save.level + " 關";
-  document.getElementById("bStart").textContent = "開始 第 " + save.level + " 關";
+  document.getElementById("bStart").textContent = "關卡模式 第 " + save.level + " 關";
+  document.getElementById("bEndless").textContent = "無盡模式" + (save.bestKills ? `（最佳 ${save.bestKills} 擊殺・${fmtT(save.bestTime)}）` : "");
   if (!P) return;
+  document.getElementById("hLv").textContent = mode === "stage" ? "第 " + save.level + " 關" : `無盡 ${fmtT(T)}・擊殺 ${kills}`;
   document.getElementById("hHp").textContent = "❤ " + Math.max(0, P.hp);
-  document.getElementById("sMulti").textContent = "箭 ×" + P.multi;
-  document.getElementById("sRate").textContent = "射速 " + P.rate.toFixed(1);
-  document.getElementById("sDmg").textContent = "傷害 " + P.dmg;
+  document.getElementById("sMen").textContent = "弓手 ×" + P.men;
+  document.getElementById("sWpn").textContent = WEAPONS[P.wpn].name;
+  document.getElementById("sRate").textContent = "射速 " + Math.round(P.rateMul * 100) + "%";
+  document.getElementById("sDmg").textContent = "傷害 " + Math.round(P.dmgMul * 100) + "%";
 }
 const pop = (text, x, z, col) => pops.push({ text, x, z, t: 0, col });
 
 /* ───── 操作 ───── */
 let drag = null, keyDir = 0;
 cv.addEventListener("pointerdown", e => { drag = { x: e.clientX }; });
-addEventListener("pointermove", e => { if (!drag || st !== "play") { if (drag) drag.x = e.clientX; return; } P.x += (e.clientX - drag.x) * (2 * EDGE) / (W * 0.8); drag.x = e.clientX; });
+addEventListener("pointermove", e => { if (!drag) return; if (st === "play") P.x += (e.clientX - drag.x) * (2 * EDGE) / (W * 0.8); drag.x = e.clientX; });
 for (const ev of ["pointerup", "pointercancel"]) addEventListener(ev, () => drag = null);
 addEventListener("keydown", e => { if (e.key === "ArrowLeft" || e.key === "a") keyDir = -1; if (e.key === "ArrowRight" || e.key === "d") keyDir = 1; });
 addEventListener("keyup", e => { if (["ArrowLeft", "ArrowRight", "a", "d"].includes(e.key)) keyDir = 0; });
 const on = (id, f) => document.getElementById(id).addEventListener("click", () => { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { } } f(); });
-on("bStart", startLevel); on("bNext", startLevel); on("bRetry", startLevel);
-on("bRetryW", () => { save.level = Math.max(1, save.level - 1); persist(); startLevel(); });
+on("bStart", () => start("stage")); on("bNext", () => start("stage"));
+on("bEndless", () => start("endless"));
+on("bRetry", () => start(mode));
+on("bRetryW", () => { save.level = Math.max(1, save.level - 1); persist(); start("stage"); });
+for (const id of ["bMenuW", "bMenuL"]) on(id, () => { st = "menu"; show("pMenu"); hud(); });
 
-/* ───── 更新 ───── */
-function lose() { st = "lose"; endT = 0; beep(110, 0.5, 0.08, "sawtooth"); document.getElementById("lInfo").textContent = boss && boss.z < 1.5 ? "魔王衝進來了！多拿點補給再來。" : `擋下了 ${kills} 個敵人，差一點！試著早點拿補給箱。`; }
+/* ───── 結束 ───── */
+function lose() {
+  st = "lose"; endT = 0; beep(110, 0.5, 0.08, "sawtooth");
+  if (mode === "endless") {
+    const rec = kills > save.bestKills;
+    if (rec) { save.bestKills = kills; save.bestTime = T; persist(); }
+    document.getElementById("lTitle").textContent = rec ? "新紀錄！" : "城破了…";
+    document.getElementById("lInfo").textContent = `撐了 ${fmtT(T)}，擊殺 ${kills}（打倒魔王 ${bossN} 隻）。最佳：${save.bestKills} 擊殺・${fmtT(save.bestTime)}`;
+  } else {
+    document.getElementById("lTitle").textContent = "城破了…";
+    document.getElementById("lInfo").textContent = `擋下了 ${kills} 個敵人，差一點！早點去拿弓手和武器。`;
+  }
+  hud();
+}
 function win() {
   st = "win"; endT = 0; beep(660, 0.12, 0.06); setTimeout(() => beep(880, 0.25, 0.06), 130);
   const stars = P.hp >= 8 ? 3 : P.hp >= 4 ? 2 : 1;
   document.getElementById("wStars").innerHTML = "★".repeat(stars) + `<span class="dim">${"★".repeat(3 - stars)}</span>`;
-  document.getElementById("wInfo").textContent = `擋下 ${kills} 個敵人＋魔王，城牆還剩 ${P.hp} 血`;
+  document.getElementById("wInfo").textContent = `擋下 ${kills} 個敵人＋魔王，城牆還剩 ${P.hp} 血（弓手 ${P.men}、${WEAPONS[P.wpn].name}）`;
   save.level++; persist(); hud();
 }
 function hitLine(dmg) { P.hp -= dmg; flash = 0.3; shake = 0.25; beep(150, 0.15, 0.06, "sawtooth"); hud(); if (P.hp <= 0) lose(); }
+
+/* ───── 弓手隊形（你在最前面，其他人排在後面） ───── */
+function slots() {
+  const out = [], n = Math.min(P.men, 40);
+  for (let i = 0; i < n; i++) {
+    if (i === 0) { out.push([0, 0]); continue; }
+    const k = i - 1, row = Math.floor(k / 7) + 1, col = k % 7;
+    out.push([(col - 3) * 0.2, -row * 0.2]);
+  }
+  return out;
+}
+
+/* ───── 傷害 ───── */
+function damageFoe(f, d) {
+  if (f.hp <= 0) return;
+  f.hp -= d;
+  if (f.hp <= 0) { kills++; for (let i = 0; i < 3; i++) parts.push({ x: f.x, z: f.z, y: 0.4, vx: (Math.random() - .5) * 3, vz: (Math.random() - .2) * 3, vy: 2 + Math.random() * 2, t: 0, col: KIND[f.kind].body }); }
+}
+function nearFoes(x, z, r, skip) { return foes.filter(f => f.hp > 0 && f !== skip && Math.abs(f.x - x) < r && Math.abs(f.z - z) < r); }
+
+/* ───── 更新 ───── */
+/* 敵人種類：一般、盔甲（灰頭）、疾行兵（橘、快兩倍）、巨漢（大隻、很硬、慢） */
+const KIND = {
+  n:     { body: "#dc2626", head: "#f3c6a5", big: 1,    r: 0.24, line: 1 },
+  arm:   { body: "#7f1d1d", head: "#94a3b8", big: 1.25, r: 0.3,  line: 2 },
+  run:   { body: "#f97316", head: "#fed7aa", big: 0.9,  r: 0.24, line: 1 },
+  brute: { body: "#991b1b", head: "#d6a07a", big: 2.0,  r: 0.45, line: 3 },
+  elite: { body: "#6d28d9", head: "#c4b5fd", big: 2.6,  r: 0.6,  line: 4 },
+};
+function spawnRow(k, sp, armP, armHp, baseHp = 1, runP = 0, bruteP = 0) {
+  for (let i = 0; i < k; i++) {
+    const r = Math.random();
+    const kind = r < bruteP ? "brute" : r < bruteP + runP ? "run" : r < bruteP + runP + armP ? "arm" : "n";
+    const hp = kind === "brute" ? armHp * 5 : kind === "arm" ? armHp : baseHp;
+    const v = sp * (kind === "run" ? 1.8 : kind === "brute" ? 0.65 : 1) * (0.85 + Math.random() * 0.3);
+    foes.push({ x: (Math.random() * 2 - 1) * (LANE - 0.2), z: FAR - 4 + Math.random() * 3, hp, hp0: hp, kind, arm: kind !== "n" && kind !== "run", sp: v, ph: Math.random() * 6 });
+  }
+}
+function spawnElite(hp, sp) {
+  foes.push({ x: (Math.random() * 2 - 1) * (LANE - 0.6), z: FAR - 2, hp, hp0: hp, kind: "elite", arm: true, sp, ph: 0 });
+  beep(140, 0.4, 0.07, "sawtooth"); pop("精英出現！", 0, 28, "#c4b5fd");
+}
 function update(dt) {
   if (flash > 0) flash -= dt; if (shake > 0) shake -= dt;
   for (const p of pops) p.t += dt; pops = pops.filter(p => p.t < 1);
+  for (const b of bolts) b.t += dt; bolts = bolts.filter(b => b.t < 0.12);
   for (const q of parts) { q.t += dt; q.x += q.vx * dt; q.z += q.vz * dt; q.y += q.vy * dt; q.vy -= 9 * dt; } parts = parts.filter(q => q.t < 0.5);
   if (st === "win" || st === "lose") { endT += dt; if (endT > 0.8 && endT - dt <= 0.8) show(st === "win" ? "pWin" : "pLose"); return; }
   if (st !== "play") return;
   T += dt;
-  P.x = Math.max(-EDGE + 0.35, Math.min(EDGE - 0.35, P.x + keyDir * 7 * dt));
-  // 冒敵人
+  P.x = Math.max(-EDGE + 0.6, Math.min(EDGE - 0.6, P.x + keyDir * 7 * dt));
+  // 出怪
   spawnAcc += dt;
-  while (spawned < C.total && spawnAcc >= C.gap) {
-    spawnAcc -= C.gap;
-    const k = Math.min(Math.ceil(C.row * Math.min(1, 0.3 + 0.9 * spawned / C.total)), C.total - spawned);   // 越後面越多
-    for (let i = 0; i < k; i++) {
-      const arm = Math.random() < C.armored;
-      foes.push({ x: (Math.random() * 2 - 1) * (LANE - 0.2), z: FAR - 4 + Math.random() * 3, hp: arm ? 3 : 1, arm, sp: C.speed * (0.85 + Math.random() * 0.3), ph: Math.random() * 6 });
+  if (mode === "stage") {
+    while (spawned < C.total && spawnAcc >= C.gap) {
+      spawnAcc -= C.gap;
+      const k = Math.min(Math.ceil(C.row * Math.min(1, 0.3 + 0.9 * spawned / C.total)), C.total - spawned);
+      spawnRow(k, C.speed, C.armored, C.armHp, C.hp, Math.min(0.2, Math.max(0, (save.level - 6) * 0.02)), Math.min(0.06, Math.max(0, (save.level - 10) * 0.005))); spawned += k;
     }
-    spawned += k;
+    if (spawned >= C.total && !boss && foes.length < C.row * 3) { boss = { z: FAR - 2, x: 0, hp: C.bossHp, hp0: C.bossHp, sp: C.bossSpeed }; beep(90, 0.6, 0.08, "sawtooth"); pop("魔王來了！", 0, 30, "#fca5a5"); }
+  } else {
+    const E = endlessCfg(T);
+    while (spawnAcc >= E.gap) { spawnAcc -= E.gap; spawnRow(E.row, E.speed, E.armored, E.armHp, E.hp, E.run, E.brute); }
+    if (T >= nextEliteT) { spawnElite(Math.round(40 + T * 1.5 + Math.pow(T / 60, 2) * 25), Math.min(2.2, 1.2 + T / 400)); nextEliteT = T + 10 + Math.random() * 22; }   // 精英：隨時會來
+    if (T >= nextBossT && (!boss || boss.dead)) {
+      const hp = Math.round(200 * Math.pow(2.1, bossN));
+      boss = { z: FAR - 2, x: 0, hp, hp0: hp, sp: Math.min(2.0, 1.0 + bossN * 0.15) }; nextBossT = T + 75;
+      beep(90, 0.6, 0.08, "sawtooth"); pop(`魔王 #${bossN + 1}！`, 0, 30, "#fca5a5");
+    }
+    if (Math.floor(T) !== Math.floor(T - dt)) hud();
   }
-  if (spawned >= C.total && !boss && foes.length < C.row * 3) { boss = { z: FAR - 2, x: 0, hp: C.bossHp, hp0: C.bossHp }; beep(90, 0.6, 0.08, "sawtooth"); pop("魔王來了！", 0, 30, "#fca5a5"); }
-  // 補給箱（左右輪流）
-  crateAcc += dt;
-  if (crateAcc >= C.crateGap && (!boss || boss.z > 10)) {
-    crateAcc = 0; crateN++;
-    const types = ["multi", "rate", "multi", "dmg", "rate", "multi"], type = types[(crateN - 1) % types.length];
-    const hp = Math.round(6 * Math.pow(1.32, crateN - 1) * (1 + save.level * 0.03));
-    crates.push({ x: crateN % 2 ? -SIDE_X : SIDE_X, z: FAR - 2, hp, hp0: hp, type });
+  // 兩側方塊輸送帶
+  for (const b of blocks) b.z -= BELT * dt;
+  blocks = blocks.filter(b => b.hp > 0 && b.z > 0.4);
+  for (const side of [-1, 1]) {
+    const lastZ = blocks.filter(b => b.side === side).reduce((m, b) => Math.max(m, b.z), 0);
+    if (lastZ < FAR - BLOCK_GAP) blocks.push(Object.assign(side < 0 ? nextLeft() : nextRight(), { z: lastZ > 0 ? lastZ + BLOCK_GAP : FAR }));
   }
   // 射箭
+  const Wp = WEAPONS[P.wpn], rate = 4 * Wp.rate * P.rateMul;
   fireAcc += dt;
-  const gap = 1 / P.rate;
-  while (fireAcc >= gap) {
-    fireAcc -= gap;
-    for (let i = 0; i < P.multi; i++) arrows.push({ x: P.x + (i - (P.multi - 1) / 2) * 0.24, z: 0.9, pierce: 0 });
-    if (Math.random() < 0.35) beep(1200 + Math.random() * 300, 0.02, 0.012, "triangle");
+  if (fireAcc >= 1 / rate) {
+    fireAcc %= 1 / rate;
+    const S = slots(), vol = S.length * Wp.spread, k = Math.min(vol, 42), mult = vol / k;
+    const dmg = Wp.dmg * P.dmgMul * mult;
+    for (let i = 0; i < k; i++) {
+      const s = S[Math.floor(i / Wp.spread) % S.length], j = i % Wp.spread;
+      const vx = Wp.spread > 1 ? (j - (Wp.spread - 1) / 2) * 3.2 : 0;
+      arrows.push({ x: P.x + s[0], z: 0.9 + s[1], vx, dmg, pierce: Wp.pierce, splash: Wp.splash, chain: Wp.chain, col: Wp.arrow, last: null });
+    }
+    if (Math.random() < 0.3) beep(1200 + Math.random() * 300, 0.02, 0.012, "triangle");
   }
-  for (const a of arrows) a.z += 34 * dt;
-  // 箭打到東西
+  for (const a of arrows) { a.z += 34 * dt; a.x += a.vx * dt; }
+  // 敵人依 z 分桶，碰撞比較快
+  const bucket = new Map();
+  for (const f of foes) if (f.hp > 0) { const k = Math.floor(f.z); (bucket.get(k) || bucket.set(k, []).get(k)).push(f); }
   for (const a of arrows) {
     if (a.dead) continue;
-    if (Math.abs(a.x) > LANE + 0.1) {                 // 在旁邊通道：打補給箱
-      for (const c of crates) if (c.hp > 0 && Math.abs(a.x - c.x) < 0.65 && Math.abs(a.z - c.z) < 0.6) {
-        c.hp -= P.dmg; a.dead = true;
-        if (c.hp <= 0) { CRATE[c.type].apply(); pop(CRATE[c.type].label + "！", c.x, c.z, "#fde68a"); beep(880, 0.12, 0.06); beep(1320, 0.18, 0.04); hud(); }
+    if (Math.abs(a.x) > LANE + 0.1) {                     // 旁邊通道：打方塊
+      const side = a.x < 0 ? -1 : 1;
+      for (const b of blocks) if (b.side === side && b.hp > 0 && Math.abs(a.z - b.z) < 0.6) {
+        b.hp -= a.dmg; a.dead = true;
+        if (b.hp <= 0) { BLOCK[b.t].apply(b); pop(BLOCK[b.t].label(b) + "！", b.side * SIDE_X, b.z, "#fde68a"); beep(880, 0.1, 0.05); beep(1320, 0.16, 0.035); hud(); }
         break;
       }
       continue;
     }
-    if (boss && boss.hp > 0 && Math.abs(a.x - boss.x) < 1.0 && Math.abs(a.z - boss.z) < 0.8) { boss.hp -= P.dmg; a.dead = true; continue; }
-    for (const f of foes) if (f.hp > 0 && Math.abs(a.x - f.x) < (f.arm ? 0.3 : 0.24) && Math.abs(a.z - f.z) < 0.45) {
-      f.hp -= P.dmg; a.dead = true;
-      if (f.hp <= 0) { kills++; for (let i = 0; i < 3; i++) parts.push({ x: f.x, z: f.z, y: 0.4, vx: (Math.random() - .5) * 3, vz: (Math.random() - .2) * 3, vy: 2 + Math.random() * 2, t: 0, col: f.arm ? "#7f1d1d" : "#ef4444" }); }
-      break;
+    if (boss && !boss.dead && Math.abs(a.x - boss.x) < 1.0 && Math.abs(a.z - boss.z) < 0.8) { boss.hp -= a.dmg; a.dead = true; continue; }
+    const zk = Math.floor(a.z);
+    let hit = null;
+    for (const k of [zk - 1, zk, zk + 1]) { const L = bucket.get(k); if (!L) continue; for (const f of L) if (f.hp > 0 && f !== a.last && Math.abs(a.x - f.x) < KIND[f.kind].r && Math.abs(a.z - f.z) < 0.45 + KIND[f.kind].r * 0.5) { hit = f; break; } if (hit) break; }
+    if (!hit) continue;
+    damageFoe(hit, a.dmg); a.last = hit;
+    if (a.splash) { for (const f of nearFoes(hit.x, hit.z, a.splash, hit)) damageFoe(f, a.dmg * 0.7); for (let i = 0; i < 4; i++) parts.push({ x: hit.x, z: hit.z, y: 0.3, vx: (Math.random() - .5) * 4, vz: (Math.random() - .5) * 4, vy: 3, t: 0, col: "#fb923c" }); }
+    if (a.chain) {
+      let from = hit; const done = new Set([hit]);
+      for (let c = 0; c < a.chain; c++) {
+        const nx = foes.filter(f => f.hp > 0 && !done.has(f) && Math.abs(f.x - from.x) < 1.8 && Math.abs(f.z - from.z) < 1.8).sort((p, q) => (Math.abs(p.x - from.x) + Math.abs(p.z - from.z)) - (Math.abs(q.x - from.x) + Math.abs(q.z - from.z)))[0];
+        if (!nx) break; bolts.push({ x1: from.x, z1: from.z, x2: nx.x, z2: nx.z, t: 0 }); damageFoe(nx, a.dmg * 0.7); done.add(nx); from = nx;
+      }
     }
+    if (a.pierce > 0) a.pierce--; else a.dead = true;
   }
-  arrows = arrows.filter(a => !a.dead && a.z < FAR + 2);
-  // 敵人往你走（會慢慢往你的位置靠）
+  arrows = arrows.filter(a => !a.dead && a.z < FAR + 2 && Math.abs(a.x) < EDGE);
+  // 敵人往你走
   const tx = Math.max(-LANE + 0.2, Math.min(LANE - 0.2, P.x));
   for (const f of foes) {
     if (f.hp <= 0) continue;
     f.z -= f.sp * dt;
-    const pull = f.z < 25 ? 1.1 : 0.5;
-    f.x += Math.max(-1, Math.min(1, tx - f.x)) * pull * dt;
-    if (f.z < 0.8) { f.hp = 0; hitLine(f.arm ? 2 : 1); if (st !== "play") return; }
+    f.x += Math.max(-1, Math.min(1, tx - f.x)) * (f.z < 25 ? 1.1 : 0.5) * dt;
+    if (f.z < 0.8) { f.hp = 0; hitLine(KIND[f.kind].line); if (st !== "play") return; }
   }
   foes = foes.filter(f => f.hp > 0);
-  for (const c of crates) c.z -= 3.4 * dt;
-  crates = crates.filter(c => c.hp > 0 && c.z > 0.6);
-  if (boss) {
-    boss.z -= C.bossSpeed * dt; boss.x += Math.max(-1, Math.min(1, tx - boss.x)) * 0.3 * dt;
-    if (boss.hp <= 0) { for (let i = 0; i < 30; i++) parts.push({ x: boss.x, z: boss.z, y: 1, vx: (Math.random() - .5) * 6, vz: (Math.random() - .5) * 6, vy: 3 + Math.random() * 4, t: 0, col: "#a78bfa" }); boss = { dead: true, z: 99 }; }
-    else if (boss.z < 1.2) { P.hp = 0; hud(); return lose(); }
+  if (boss && !boss.dead) {
+    boss.z -= boss.sp * dt; boss.x += Math.max(-1, Math.min(1, tx - boss.x)) * 0.3 * dt;
+    if (boss.hp <= 0) {
+      for (let i = 0; i < 30; i++) parts.push({ x: boss.x, z: boss.z, y: 1, vx: (Math.random() - .5) * 6, vz: (Math.random() - .5) * 6, vy: 3 + Math.random() * 4, t: 0, col: "#a78bfa" });
+      boss.dead = true; bossN++; kills += 10; beep(500, 0.3, 0.07); pop("魔王倒下！", 0, 12, "#c4b5fd"); hud();
+    } else if (boss.z < 1.2) {
+      if (mode === "stage") { P.hp = 0; hud(); return lose(); }
+      boss.dead = true; hitLine(5); pop("魔王撞城 −5", 0, 4, "#fca5a5"); if (st !== "play") return;
+    }
   }
-  if (boss && boss.dead && !foes.length) return win();
-  document.getElementById("hBar").style.width = Math.min(100, (spawned / C.total) * 85 + (boss ? (boss.dead ? 15 : 15 * (1 - boss.hp / boss.hp0)) : 0)) + "%";
+  if (mode === "stage") {
+    if (boss && boss.dead && !foes.length) return win();
+    document.getElementById("hBar").style.width = Math.min(100, (spawned / C.total) * 85 + (boss ? (boss.dead ? 15 : 15 * (1 - boss.hp / boss.hp0)) : 0)) + "%";
+  } else document.getElementById("hBar").style.width = (boss && !boss.dead ? 100 * Math.max(0, boss.hp) / boss.hp0 : 100 * (1 - (nextBossT - T) / 75)) + "%";
 }
 
 /* ───── 畫圖 ───── */
@@ -244,36 +380,45 @@ function draw() {
   poly([proj(-LANE, near), proj(LANE, near), proj(LANE, far), proj(-LANE, far)], "#9aa9b8");
   for (let z = 0; z < far; z += 4) if ((z / 4) % 2 === 0) poly([proj(-LANE, Math.max(z, near)), proj(LANE, Math.max(z, near)), proj(LANE, z + 2), proj(-LANE, z + 2)], "#a6b4c2");
   for (const sx of [-1, 1]) {
-    poly([proj(sx * (LANE + 0.15), near), proj(sx * EDGE, near), proj(sx * EDGE, far), proj(sx * (LANE + 0.15), far)], "#bcd6ef");
+    poly([proj(sx * (LANE + 0.15), near), proj(sx * EDGE, near), proj(sx * EDGE, far), proj(sx * (LANE + 0.15), far)], sx < 0 ? "#bfdbfe" : "#e9d5ff");
     poly([proj(sx * LANE, near), proj(sx * (LANE + 0.15), near, 0.35), proj(sx * (LANE + 0.15), far, 0.35), proj(sx * LANE, far)], "#5b6b7c");
   }
-  // 城牆線
   poly([proj(-EDGE, -0.9), proj(EDGE, -0.9), proj(EDGE, -0.9, 0.3), proj(-EDGE, -0.9, 0.3)], "#475569");
   if (!P) { g.restore(); return; }
   const D = [];
-  for (const f of foes) D.push({ z: f.z, f: () => { const p = proj(f.x, f.z, Math.abs(Math.sin(T * 12 + f.ph)) * 0.05); if (p) man(p, f.arm ? "#7f1d1d" : "#dc2626", f.arm ? "#94a3b8" : "#f3c6a5", f.arm ? 1.25 : 1); } });
-  for (const c of crates) D.push({ z: c.z, f: () => drawCrate(c) });
+  for (const f of foes) D.push({ z: f.z, f: () => { const K = KIND[f.kind], p = proj(f.x, f.z, Math.abs(Math.sin(T * (f.kind === "run" ? 20 : 12) + f.ph)) * 0.05); if (!p) return; man(p, K.body, K.head, K.big); if (f.kind === "brute" || f.kind === "elite") { const bw = p.s * 0.5 * K.big * 0.6; g.fillStyle = "#0008"; g.fillRect(p.x - bw / 2, p.y - p.s * 0.19 * K.big * 4.3, bw, Math.max(2, p.s * 0.05)); g.fillStyle = f.kind === "elite" ? "#a78bfa" : "#ef4444"; g.fillRect(p.x - bw / 2, p.y - p.s * 0.19 * K.big * 4.3, bw * Math.max(0, f.hp) / f.hp0, Math.max(2, p.s * 0.05)); } } });
+  for (const b of blocks) D.push({ z: b.z, f: () => drawBlock(b) });
   if (boss && !boss.dead) D.push({ z: boss.z, f: drawBoss });
-  D.push({ z: 0, f: drawPlayer });
+  const S = slots();
+  for (const s of S) D.push({ z: s[1], f: () => { const p = proj(P.x + s[0], s[1]); if (p) { man(p, s === S[0] ? "#1d4ed8" : "#3b82f6", "#f3c6a5", s === S[0] ? 1.5 : 1); if (s === S[0]) drawBow(p); } } });
   D.sort((a, b) => b.z - a.z); for (const d of D) d.f();
-  g.strokeStyle = "#fef3c7"; g.lineWidth = 2;
-  for (const a of arrows) { const p = proj(a.x, a.z, 0.5), q = proj(a.x, a.z - 0.6, 0.5); if (p && q) { g.lineWidth = Math.max(1.2, p.s * 0.03); g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(q.x, q.y); g.stroke(); } }
+  if (P.men > 1) { const p = proj(P.x, -1.4, 0); if (p) label("×" + P.men, p.x, p.y + p.s * 0.1, Math.max(14, p.s * 0.45), "#bfdbfe"); }
+  for (const a of arrows) { const p = proj(a.x, a.z, 0.5), q = proj(a.x - a.vx * 0.018, a.z - 0.6, 0.5); if (p && q) { g.strokeStyle = a.col; g.lineWidth = Math.max(1.2, p.s * 0.03); g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(q.x, q.y); g.stroke(); } }
+  g.strokeStyle = "#fde047"; g.lineWidth = 2.5;
+  for (const b of bolts) { const p = proj(b.x1, b.z1, 0.5), q = proj(b.x2, b.z2, 0.5); if (p && q) { g.beginPath(); g.moveTo(p.x, p.y); g.lineTo((p.x + q.x) / 2 + (Math.random() - .5) * 8, (p.y + q.y) / 2 + (Math.random() - .5) * 8); g.lineTo(q.x, q.y); g.stroke(); } }
   for (const q of parts) { const p = proj(q.x, q.z, q.y); if (p) { g.globalAlpha = 1 - q.t / 0.5; g.fillStyle = q.col; g.beginPath(); g.arc(p.x, p.y, p.s * 0.05, 0, 7); g.fill(); g.globalAlpha = 1; } }
-  for (const o of pops) { const p = proj(o.x, o.z, 2 + o.t * 1.5); if (p) { g.globalAlpha = Math.max(0, 1 - o.t); label(o.text, p.x, p.y, Math.max(18, p.s * 0.7), o.col); g.globalAlpha = 1; } }
+  for (const o of pops) { const p = proj(o.x, o.z, 2 + o.t * 1.5); if (p) { g.globalAlpha = Math.max(0, 1 - o.t); label(o.text, p.x, p.y, Math.max(16, p.s * 0.6), o.col); g.globalAlpha = 1; } }
   g.restore();
   if (flash > 0) { g.fillStyle = `rgba(220,38,38,${flash * 0.5})`; g.fillRect(0, 0, W, H); }
 }
-function drawCrate(c) {
-  const w = 0.55, col = CRATE[c.type].col;
-  poly([proj(c.x - w, c.z), proj(c.x + w, c.z), proj(c.x + w, c.z, 1.0), proj(c.x - w, c.z, 1.0)], col, "#0f172a", 2);
-  poly([proj(c.x - w, c.z, 1.0), proj(c.x + w, c.z, 1.0), proj(c.x + w, c.z + 0.6, 1.0), proj(c.x - w, c.z + 0.6, 1.0)], "#ffffff55", "#0f172a", 1.5);
-  const p = proj(c.x, c.z, 0.62), q = proj(c.x, c.z, 0.25);
-  if (p) label(CRATE[c.type].label, p.x, p.y, Math.max(11, p.s * 0.3), "#fff");
-  if (q) label(String(Math.max(0, c.hp)), q.x, q.y, Math.max(11, q.s * 0.3), "#fde68a");
+function drawBlock(b) {
+  const x = b.side * SIDE_X, w = 0.6, d = BLOCK_GAP * 0.42, h = 0.9;
+  const col = b.t === "wpn" ? WEAPONS[b.w].col : BLOCK[b.t].col;
+  poly([proj(x - w, b.z - d), proj(x + w, b.z - d), proj(x + w, b.z - d, h), proj(x - w, b.z - d, h)], col, "#0f172a", 1.5);
+  poly([proj(x - w, b.z - d, h), proj(x + w, b.z - d, h), proj(x + w, b.z + d, h), proj(x - w, b.z + d, h)], "#ffffff40", "#0f172a", 1);
+  const p = proj(x, b.z - d, h * 0.66), q = proj(x, b.z - d, h * 0.26);
+  if (p && p.s > 13) label(BLOCK[b.t].label(b), p.x, p.y, Math.max(9, p.s * 0.24), "#fff");
+  if (q && q.s > 13) label(String(Math.max(0, Math.ceil(b.hp))), q.x, q.y, Math.max(9, q.s * 0.24), "#fde68a");
+}
+function drawBow(p) {
+  const s = p.s * 0.28, col = WEAPONS[P.wpn].col;
+  g.strokeStyle = col; g.lineWidth = Math.max(2, s * 0.25);
+  g.beginPath(); g.arc(p.x, p.y - s * 2.6, s * 1.6, Math.PI * 1.15, Math.PI * 1.85); g.stroke();
+  g.strokeStyle = "#e5e7eb"; g.lineWidth = 1; g.beginPath(); g.moveTo(p.x - s * 1.3, p.y - s * 3.5); g.lineTo(p.x + s * 1.3, p.y - s * 3.5); g.stroke();
 }
 function drawBoss() {
   const p = proj(boss.x, boss.z); if (!p) return;
-  const s = p.s;
+  const s = p.s * (1 + Math.min(1, bossN * 0.15));
   g.fillStyle = "#0004"; g.beginPath(); g.ellipse(p.x, p.y, s * 1.1, s * 0.35, 0, 0, 7); g.fill();
   g.fillStyle = "#7f1d1d"; g.beginPath(); g.moveTo(p.x - s * 0.95, p.y); g.lineTo(p.x + s * 0.95, p.y); g.lineTo(p.x + s * 0.6, p.y - s * 2); g.lineTo(p.x - s * 0.6, p.y - s * 2); g.fill();
   g.fillStyle = "#facc15"; g.fillRect(p.x - s * 0.6, p.y - s * 1.2, s * 1.2, s * 0.14);
@@ -285,22 +430,14 @@ function drawBoss() {
   const bw = s * 1.9, fr = Math.max(0, boss.hp) / boss.hp0;
   g.fillStyle = "#0008"; g.fillRect(p.x - bw / 2, p.y - s * 3.55, bw, s * 0.18);
   g.fillStyle = "#ef4444"; g.fillRect(p.x - bw / 2, p.y - s * 3.55, bw * fr, s * 0.18);
-  label(String(Math.max(0, boss.hp)), p.x, p.y - s * 3.85, Math.max(14, s * 0.4), "#fff");
-}
-function drawPlayer() {
-  const p = proj(P.x, 0); if (!p) return;
-  man(p, "#2563eb", "#f3c6a5", 1.5);
-  const s = p.s * 0.18;
-  g.strokeStyle = "#78350f"; g.lineWidth = Math.max(2, s * 0.25);
-  g.beginPath(); g.arc(p.x, p.y - s * 2.6, s * 1.6, Math.PI * 1.15, Math.PI * 1.85); g.stroke();
-  g.strokeStyle = "#e5e7eb"; g.lineWidth = 1; g.beginPath(); g.moveTo(p.x - s * 1.3, p.y - s * 3.5); g.lineTo(p.x + s * 1.3, p.y - s * 3.5); g.stroke();
+  label(String(Math.max(0, Math.ceil(boss.hp))), p.x, p.y - s * 3.85, Math.max(14, s * 0.4), "#fff");
 }
 
 /* ───── 主迴圈 ───── */
 let last = performance.now();
 function frame(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; update(dt); draw(); requestAnimationFrame(frame); }
 if (/github\.io$|^localhost$|^127\.0\.0\.1$|\.ts\.net$/.test(location.hostname)) document.getElementById("homeLink").classList.remove("hidden");
-hud(); P = { x: 0, hp: 10, multi: 1, rate: 4, dmg: 1 }; hud();
+P = freshPlayer(); hud(); P = null;
 requestAnimationFrame(frame);
 </script>
 </body></html>
