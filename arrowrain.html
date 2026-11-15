@@ -32,7 +32,7 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
   <div class="panel" id="pMenu">
     <h1>箭雨守關</h1>
     <p>左右拖曳移動，弓箭自動往前射。<br>紅色人潮朝你衝過來，漏一個扣一滴血。</p>
-    <p>兩側疊滿方塊，射碎了就拿到：<br>
+    <p>兩側疊滿方塊，射碎了就拿到（弓手多了隊伍會變寬，站靠邊可以一邊擋人一邊打方塊）：<br>
       <span class="tag" style="background:#2563eb">+1 弓手</span>
       <span class="tag" style="background:#9333ea">換武器</span>
       <span class="tag" style="background:#059669">射速</span>
@@ -112,30 +112,34 @@ function dps() {                // 目前每秒總傷害（方塊血量跟著它
   return 4 * Wp.rate * P.rateMul * Wp.dmg * Wp.spread * P.dmgMul * P.men;
 }
 const lvF = () => mode === "endless" ? 1 + T / 240 : 1 + save.level * 0.04;   // 時間越久／關卡越後面，同樣火力要打更久
+let taken = 0;                   // 這場拿過幾個方塊：越後面越貴
 function nextLeft() {          // 左排：一直是 +弓手，偶爾 +2／+3
   leftN++;
   const v = leftN % 9 === 0 ? 3 : leftN % 4 === 0 ? 2 : 1;
-  const hp = Math.max(3, Math.round(dps() * 0.45 * v * lvF()));
-  return { side: -1, t: "men", v, hp, hp0: hp };
+  return { side: -1, t: "men", v, secs: 0.4 * v, hp: null };
 }
 function nextRight() {         // 右排：武器、射速、傷害、補血輪著來
   rightN++;
   const cyc = ["wpn", "rate", "dmg", "wpn", "heal", "rate", "dmg"], t = cyc[(rightN - 1) % cyc.length];
   let w = null;
   if (t === "wpn") { const opts = WKEYS.filter(k => k !== P.wpn); w = opts[Math.floor(Math.random() * opts.length)]; }
-  const secs = t === "wpn" ? 1.4 : t === "heal" ? 1.1 : 0.9;
-  const hp = Math.max(8, Math.round(dps() * secs * lvF()));
-  return { side: 1, t, w, hp, hp0: hp };
+  return { side: 1, t, w, secs: t === "wpn" ? 1.1 : t === "heal" ? 0.8 : 0.9, hp: null };
+}
+/* 方塊走到 PRICE_Z 以內才定血量（照「當下」火力）：不會一開始一堆便宜方塊、後面全是上萬血 */
+const PRICE_Z = 26, MAX_FOES = 350;   // 場上最多 350 個（手機跑得動）；之後靠每個人變硬來加難度
+function priceBlock(b) {
+  const hp = Math.max(b.side < 0 ? 3 : 8, Math.round(dps() * b.secs * lvF() * (1 + taken * 0.012)));
+  b.hp = hp; b.hp0 = hp;
 }
 
 /* ───── 關卡／無盡的出怪節奏 ───── */
 function levelCfg(n) {
   return { total: Math.min(520, 60 + 26 * n), row: Math.min(10, 3 + Math.floor(n * 0.4)), gap: Math.max(0.4, 0.72 - n * 0.015),
-           speed: Math.min(3.4, 2.4 + n * 0.05), armored: Math.min(0.4, 0.06 + n * 0.025), armHp: 3 + Math.floor(n / 3), hp: 1 + Math.floor(n / 4),
+           speed: Math.min(3.4, 2.4 + n * 0.05), armored: Math.min(0.4, 0.06 + n * 0.025), armHp: 3 + Math.floor(n / 5), hp: 1 + Math.floor(n / 8),
            bossHp: Math.round(80 + 55 * n + 4 * n * n), bossSpeed: Math.min(1.8, 1.0 + n * 0.04) };
 }
 function endlessCfg(t) {          // 無盡：每 75 秒一隻魔王，越撐越難
-  return { row: Math.min(14, 3 + Math.floor(t / 16)), gap: Math.max(0.3, 0.72 - t * 0.0035), speed: Math.min(4.2, 2.4 + t * 0.011),
+  return { row: Math.min(16, 5 + Math.floor(t / 14)), gap: Math.max(0.3, 0.55 - t * 0.0015), speed: Math.min(4.2, 2.4 + t * 0.011),
            armored: Math.min(0.5, 0.05 + t * 0.003), armHp: 3 + Math.floor(t / 25) + Math.floor(Math.pow(t / 60, 2)), hp: 1 + Math.floor(t / 45) + Math.floor(Math.pow(t / 120, 2)),
            run: Math.min(0.25, t / 600), brute: Math.min(0.08, Math.max(0, (t - 40) / 1500)) };   // 越後面每個人越硬
 }
@@ -147,7 +151,7 @@ function freshPlayer() { return { x: 0, hp: 10, hpMax: 10, men: mode === "stage"
 function start(m) {
   mode = m; C = m === "stage" ? levelCfg(save.level) : null;
   P = freshPlayer(); foes = []; arrows = []; blocks = []; parts = []; pops = []; bolts = []; boss = null;
-  T = 0; spawnAcc = 0; fireAcc = 0; spawned = 0; kills = 0; bossN = 0; nextBossT = 75; nextEliteT = 20 + Math.random() * 15; leftN = 0; rightN = 0;
+  T = 0; spawnAcc = 0; fireAcc = 0; spawned = 0; kills = 0; bossN = 0; taken = 0; nextBossT = 75; nextEliteT = 20 + Math.random() * 15; leftN = 0; rightN = 0;
   for (let z = 6; z < FAR; z += BLOCK_GAP) { blocks.push(Object.assign(nextLeft(), { z })); blocks.push(Object.assign(nextRight(), { z: z + BLOCK_GAP * 0.5 })); }
   st = "play"; show(null); hud();
 }
@@ -208,8 +212,9 @@ function slots() {
   const out = [], n = Math.min(P.men, 40);
   for (let i = 0; i < n; i++) {
     if (i === 0) { out.push([0, 0]); continue; }
-    const k = i - 1, row = Math.floor(k / 7) + 1, col = k % 7;
-    out.push([(col - 3) * 0.2, -row * 0.2]);
+    const cols = Math.max(3, Math.min(11, 3 + Math.floor(P.men / 5)));   // 人越多隊伍越寬：站靠邊時外側的人會射到旁邊的方塊
+    const k = i - 1, row = Math.floor(k / cols) + 1, col = k % cols;
+    out.push([(col - (cols - 1) / 2) * 0.22, -row * 0.22]);
   }
   return out;
 }
@@ -264,7 +269,7 @@ function update(dt) {
     if (spawned >= C.total && !boss && foes.length < C.row * 3) { boss = { z: FAR - 2, x: 0, hp: C.bossHp, hp0: C.bossHp, sp: C.bossSpeed }; beep(90, 0.6, 0.08, "sawtooth"); pop("魔王來了！", 0, 30, "#fca5a5"); }
   } else {
     const E = endlessCfg(T);
-    while (spawnAcc >= E.gap) { spawnAcc -= E.gap; spawnRow(E.row, E.speed, E.armored, E.armHp, E.hp, E.run, E.brute); }
+    while (spawnAcc >= E.gap) { spawnAcc -= E.gap; if (foes.length < MAX_FOES) spawnRow(E.row, E.speed, E.armored, E.armHp, E.hp, E.run, E.brute); }
     if (T >= nextEliteT) { spawnElite(Math.round(40 + T * 1.5 + Math.pow(T / 60, 2) * 25), Math.min(2.2, 1.2 + T / 400)); nextEliteT = T + 10 + Math.random() * 22; }   // 精英：隨時會來
     if (T >= nextBossT && (!boss || boss.dead)) {
       const hp = Math.round(200 * Math.pow(2.1, bossN));
@@ -274,8 +279,8 @@ function update(dt) {
     if (Math.floor(T) !== Math.floor(T - dt)) hud();
   }
   // 兩側方塊輸送帶
-  for (const b of blocks) b.z -= BELT * dt;
-  blocks = blocks.filter(b => b.hp > 0 && b.z > 0.4);
+  for (const b of blocks) { b.z -= BELT * dt; if (b.hp === null && b.z < PRICE_Z) priceBlock(b); }
+  blocks = blocks.filter(b => (b.hp === null || b.hp > 0) && b.z > 0.4);
   for (const side of [-1, 1]) {
     const lastZ = blocks.filter(b => b.side === side).reduce((m, b) => Math.max(m, b.z), 0);
     if (lastZ < FAR - BLOCK_GAP) blocks.push(Object.assign(side < 0 ? nextLeft() : nextRight(), { z: lastZ > 0 ? lastZ + BLOCK_GAP : FAR }));
@@ -302,9 +307,9 @@ function update(dt) {
     if (a.dead) continue;
     if (Math.abs(a.x) > LANE + 0.1) {                     // 旁邊通道：打方塊
       const side = a.x < 0 ? -1 : 1;
-      for (const b of blocks) if (b.side === side && b.hp > 0 && Math.abs(a.z - b.z) < 0.6) {
+      for (const b of blocks) if (b.side === side && b.hp !== null && b.hp > 0 && Math.abs(a.z - b.z) < 0.6) {
         b.hp -= a.dmg; a.dead = true;
-        if (b.hp <= 0) { BLOCK[b.t].apply(b); pop(BLOCK[b.t].label(b) + "！", b.side * SIDE_X, b.z, "#fde68a"); beep(880, 0.1, 0.05); beep(1320, 0.16, 0.035); hud(); }
+        if (b.hp <= 0) { taken++; BLOCK[b.t].apply(b); pop(BLOCK[b.t].label(b) + "！", b.side * SIDE_X, b.z, "#fde68a"); beep(880, 0.1, 0.05); beep(1320, 0.16, 0.035); hud(); }
         break;
       }
       continue;
@@ -408,7 +413,7 @@ function drawBlock(b) {
   poly([proj(x - w, b.z - d, h), proj(x + w, b.z - d, h), proj(x + w, b.z + d, h), proj(x - w, b.z + d, h)], "#ffffff40", "#0f172a", 1);
   const p = proj(x, b.z - d, h * 0.66), q = proj(x, b.z - d, h * 0.26);
   if (p && p.s > 13) label(BLOCK[b.t].label(b), p.x, p.y, Math.max(9, p.s * 0.24), "#fff");
-  if (q && q.s > 13) label(String(Math.max(0, Math.ceil(b.hp))), q.x, q.y, Math.max(9, q.s * 0.24), "#fde68a");
+  if (q && q.s > 13 && b.hp !== null) label(String(Math.max(0, Math.ceil(b.hp))), q.x, q.y, Math.max(9, q.s * 0.24), "#fde68a");
 }
 function drawBow(p) {
   const s = p.s * 0.28, col = WEAPONS[P.wpn].col;
