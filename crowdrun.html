@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>人海衝鋒</title>
+<style>
+html,body{margin:0;height:100%;background:#1b2430;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;font-family:-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif}
+canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
+#ui{position:fixed;inset:0;pointer-events:none}
+.hud{position:absolute;top:10px;left:12px;right:12px;display:flex;justify-content:space-between;align-items:center;color:#fff;font-weight:800;font-size:17px;text-shadow:0 1px 3px #000a}
+.bar{position:absolute;top:40px;left:12px;right:12px;height:6px;border-radius:3px;background:#ffffff30;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:#7dd3fc}
+.panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(86vw,360px);background:#0f1722f2;border-radius:20px;padding:22px 20px;color:#fff;text-align:center;pointer-events:auto;box-shadow:0 12px 40px #000a}
+.panel h1{margin:0 0 4px;font-size:32px;letter-spacing:2px}
+.panel h2{margin:0 0 6px;font-size:26px}
+.panel p{margin:6px 0;color:#c9d3e0;font-size:15px;line-height:1.55}
+.btn{display:block;width:100%;margin-top:12px;padding:13px;border:0;border-radius:12px;font-size:18px;font-weight:800;background:#3b82f6;color:#fff;font-family:inherit}
+.btn.alt{background:#283548;font-size:16px}
+.btn:disabled{opacity:.4}
+.stars{font-size:38px;letter-spacing:6px;color:#ffd34d;margin:4px 0}
+.dim{color:#4b5563}
+.hidden{display:none}
+.tag{display:inline-block;padding:2px 8px;border-radius:8px;margin:2px;font-weight:800}
+.g{background:#2563eb}.b{background:#dc2626}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="hud"><span id="hLv">第 1 關</span><span id="hCoin">🪙 0</span></div>
+  <div class="bar"><i id="hBar"></i></div>
+  <div class="panel" id="pMenu">
+    <h1>人海衝鋒</h1>
+    <p>左右拖曳，帶著隊伍穿過好的門<br>
+      <span class="tag g">+10</span><span class="tag g">×2</span> 加人
+      <span class="tag b">−8</span><span class="tag b">÷2</span> 扣人</p>
+    <p>撞上紅色敵軍會互相抵消，躲開刀片和牆。<br>終點打倒魔王就過關！</p>
+    <button class="btn" id="bStart">開始 第 1 關</button>
+    <button class="btn alt" id="bUp1">升級</button>
+  </div>
+  <div class="panel hidden" id="pWin">
+    <h2>過關！</h2>
+    <div class="stars" id="wStars">★★★</div>
+    <p id="wInfo"></p>
+    <button class="btn" id="bNext">下一關</button>
+    <button class="btn alt" id="bUp2">升級</button>
+    <button class="btn alt" id="bRetryW">重玩這關</button>
+  </div>
+  <div class="panel hidden" id="pLose">
+    <h2>全軍覆沒…</h2>
+    <p id="lInfo"></p>
+    <button class="btn" id="bRetry">再試一次</button>
+    <button class="btn alt" id="bUp3">升級</button>
+  </div>
+</div>
+<script>
+"use strict";
+/* ───── 畫布 ───── */
+const cv = document.getElementById("c"), g = cv.getContext("2d");
+let W = 0, H = 0, F = 0, HOR = 0;
+const HALF = 2.5, CAMH = 7, CAMBACK = 7, SPEED = 9, CAP = 160, SP = 0.17;
+function resize() {
+  const d = Math.min(2, window.devicePixelRatio || 1);
+  W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * d); cv.height = Math.round(H * d);
+  g.setTransform(d, 0, 0, d, 0, 0);
+  const sp = Math.min(W * 0.41 / HALF, H * 0.085);
+  F = sp * CAMBACK; HOR = H * 0.8 - CAMH * sp;
+}
+addEventListener("resize", resize); resize();
+let camZ = 0;
+function proj(x, z, y = 0) {
+  const d = z - camZ; if (d < 0.6) return null;
+  const s = F / d; return { x: W / 2 + x * s, y: HOR + (CAMH - y) * s, s };
+}
+
+/* ───── 存檔 ───── */
+const KEY = "crowdrun-v1";
+const save = { level: 1, coins: 0, up: 0 };
+try { Object.assign(save, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) { }
+const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) { } };
+const startCount = () => 1 + save.up * 3;
+const upCost = () => 30 + save.up * 40;
+
+/* ───── 音效（點按鈕後才開） ───── */
+let AC = null;
+function beep(f, d = 0.08, v = 0.06, type = "square") {
+  if (!AC) return;
+  try {
+    const o = AC.createOscillator(), a = AC.createGain();
+    o.type = type; o.frequency.value = f; a.gain.value = v;
+    a.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+    o.connect(a); a.connect(AC.destination); o.start(); o.stop(AC.currentTime + d);
+  } catch (e) { }
+}
+
+/* ───── 關卡產生（同一關每次都一樣） ───── */
+function rng(seed) { let s = (seed * 2654435761) >>> 0 || 1; return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+const applyOp = (op, n) => op.o === "+" ? n + op.v : op.o === "-" ? Math.max(0, n - op.v) : op.o === "x" ? n * op.v : Math.floor(n / op.v);
+const isGood = op => op.o === "+" || op.o === "x";
+const opText = op => (op.o === "+" ? "+" : op.o === "-" ? "−" : op.o === "x" ? "×" : "÷") + op.v;
+function makeLevel(n) {                     // 每關都檢查：選對的門一定贏得了，而且人數不會太少／太誇張；不合格換一組重來
+  let lv = null;
+  for (let a = 0; a < 40; a++) { lv = genLevel(n, a); if (lv.best >= 25 && lv.best <= 6000) break; }
+  return lv;
+}
+function genLevel(n, attempt) {
+  const r = rng(n * 7919 + 13 + attempt * 104729), ri = (a, b) => a + Math.floor(r() * (b - a + 1));
+  let best = 1, z = 20;
+  const items = [], segs = 8 + Math.min(10, Math.floor(n * 0.8));
+  const goodOp = () => {
+    if (best >= 3 && best < 2000 && r() < 0.28) return { o: "x", v: r() < 0.75 ? 2 : 3 };
+    return { o: "+", v: Math.max(3, Math.round(best * (0.25 + r() * 0.5)) + ri(2, 9)) };
+  };
+  const badOp = () => {
+    if (best >= 6 && r() < 0.3) return { o: "/", v: 2 };
+    return { o: "-", v: Math.max(2, Math.round(best * (0.2 + r() * 0.4)) + ri(0, 3)) };
+  };
+  let prevHazard = false;
+  for (let i = 0; i < segs; i++) {
+    const roll = prevHazard ? 1 : r();                      // 不會連續兩個敵人／障礙
+    prevHazard = false;
+    const pEnemy = Math.min(0.38, 0.22 + 0.02 * n), pObs = n >= 2 ? 0.2 : 0;
+    if (i >= 3 && roll < pEnemy && best >= 10) {
+      prevHazard = true;
+      const m = Math.max(1, Math.min(best - 2, Math.round(best * (0.22 + 0.025 * Math.min(n, 10) + r() * 0.15))));
+      items.push({ t: "enemy", z: z + 4, m, m0: m }); best -= m;
+    } else if (i >= 2 && roll < pEnemy + pObs) {
+      prevHazard = true;
+      if (r() < 0.55) items.push({ t: "saw", z, hw: 0.95 + Math.min(0.5, n * 0.03), w: 1.2 + r() * 1.2 + n * 0.05, ph: r() * 6.28 });
+      else items.push({ t: "wall", z, side: r() < 0.5 ? -1 : 1, len: HALF * (0.55 + r() * 0.2) });
+    } else {
+      const lesser = n >= 3 && best >= 30 && r() < Math.min(0.2, 0.03 * n);
+      let a, b; const t = r();
+      if (lesser) { a = badOp(); b = badOp(); }
+      else if (t < 0.5) { a = goodOp(); b = badOp(); }
+      else { a = goodOp(); b = goodOp(); }
+      if (a.o === b.o && a.v === b.v) b = { o: b.o, v: b.v + ri(1, 4) };
+      const ops = r() < 0.5 ? [a, b] : [b, a];
+      items.push({ t: "gate", z, ops, done: -1 });
+      best = Math.max(1, Math.max(applyOp(ops[0], best), applyOp(ops[1], best)));
+    }
+    z += 20 + ri(0, 4);
+  }
+  const factor = Math.min(0.86, 0.45 + 0.045 * n);
+  const hp = Math.max(4, Math.round(best * factor));
+  return { n, items, bossZ: z + 8, hp, hp0: hp, best };
+}
+
+/* ───── 遊戲狀態 ───── */
+let L = null, st = "menu", P = { x: 0, z: 0, n: 1, start: 1 }, fightAcc = 0, cur = null, endT = 0;
+let pops = [], parts = [], shake = 0, flash = 0;
+const crowdR = n => SP * Math.sqrt(Math.min(n, CAP)) + 0.12;
+function startLevel() {
+  L = makeLevel(save.level);
+  P = { x: 0, z: 0, n: startCount(), start: startCount() };
+  camZ = P.z - CAMBACK; st = "run"; pops = []; parts = []; cur = null;
+  show(null); hud();
+}
+function pop(text, x, z, col) { pops.push({ text, x, z, t: 0, col }); }
+function hud() {
+  document.getElementById("hLv").textContent = "第 " + save.level + " 關";
+  document.getElementById("hCoin").textContent = "🪙 " + save.coins.toLocaleString();
+  ["bUp1", "bUp2", "bUp3"].forEach(id => {
+    const b = document.getElementById(id);
+    b.textContent = `升級：起始人數 ${startCount()} → ${startCount() + 3}（🪙${upCost()}）`;
+    b.disabled = save.coins < upCost();
+  });
+  document.getElementById("bStart").textContent = "開始 第 " + save.level + " 關";
+}
+function show(id) { for (const p of ["pMenu", "pWin", "pLose"]) document.getElementById(p).classList.toggle("hidden", p !== id); }
+
+/* ───── 操作 ───── */
+let drag = null, keyDir = 0;
+cv.addEventListener("pointerdown", e => { drag = { x: e.clientX }; });
+addEventListener("pointermove", e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x; drag.x = e.clientX;
+  if (st === "run" || st === "fight") P.x += dx * (2 * HALF) / (W * 0.72);
+});
+for (const ev of ["pointerup", "pointercancel"]) addEventListener(ev, () => drag = null);
+addEventListener("keydown", e => { if (e.key === "ArrowLeft" || e.key === "a") keyDir = -1; if (e.key === "ArrowRight" || e.key === "d") keyDir = 1; });
+addEventListener("keyup", e => { if (["ArrowLeft", "ArrowRight", "a", "d"].includes(e.key)) keyDir = 0; });
+function initAudio() { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { } } }
+const on = (id, f) => document.getElementById(id).addEventListener("click", () => { initAudio(); f(); });
+on("bStart", startLevel); on("bNext", startLevel); on("bRetry", startLevel);
+on("bRetryW", () => { save.level = Math.max(1, save.level - 1); persist(); startLevel(); });
+for (const id of ["bUp1", "bUp2", "bUp3"]) on(id, () => { if (save.coins >= upCost()) { save.coins -= upCost(); save.up++; persist(); hud(); beep(880, 0.12); } });
+
+/* ───── 更新 ───── */
+function lose(why) {
+  st = "lose"; endT = 0; P.n = 0; shake = 0.4; beep(110, 0.4, 0.08, "sawtooth");
+  document.getElementById("lInfo").textContent = why;
+}
+function win() {
+  st = "win"; endT = 0; beep(660, 0.12); setTimeout(() => beep(880, 0.2), 120);
+  const room = Math.max(1, L.best - L.hp0);
+  const stars = P.n >= room * 0.6 ? 3 : P.n >= room * 0.3 ? 2 : 1;
+  const reward = 15 + 10 * L.n + stars * 5 * L.n;
+  save.coins += reward; save.level++; persist(); hud();
+  document.getElementById("wStars").innerHTML = "★".repeat(stars) + `<span class="dim">${"★".repeat(3 - stars)}</span>`;
+  document.getElementById("wInfo").textContent = `剩下 ${P.n.toLocaleString()} 人　獲得 🪙${reward}`;
+}
+function update(dt, T) {
+  if (shake > 0) shake -= dt; if (flash > 0) flash -= dt;
+  for (const p of pops) p.t += dt; pops = pops.filter(p => p.t < 1.1);
+  for (const q of parts) { q.t += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vy -= 9 * dt; } parts = parts.filter(q => q.t < 0.6);
+  if (st === "win" || st === "lose") { endT += dt; if (endT > 0.9 && endT - dt <= 0.9) show(st === "win" ? "pWin" : "pLose"); return; }
+  if (st !== "run" && st !== "fight" && st !== "boss") return;
+  P.x += keyDir * 6 * dt;
+  const R = crowdR(P.n), lim = Math.max(0, HALF - R * 0.85 - 0.05);
+  P.x = Math.max(-lim, Math.min(lim, P.x));
+  if (st === "run") {
+    const en = L.items.find(o => o.t === "enemy" && o.m > 0 && P.z + R >= o.z - crowdR(o.m));
+    if (en) { st = "fight"; cur = en; fightAcc = 0; }
+    else if (P.z + R >= L.bossZ - 2.4) { st = "boss"; fightAcc = 0; }
+    else {
+      const z0 = P.z; P.z += SPEED * dt;
+      for (const o of L.items) {
+        if (!(z0 < o.z && P.z >= o.z)) continue;
+        if (o.t === "gate") {
+          const side = P.x < 0 ? 0 : 1, op = o.ops[side]; o.done = side;
+          const before = P.n; P.n = applyOp(op, P.n);
+          pop(opText(op), P.x, P.z + 1, isGood(op) ? "#93c5fd" : "#fca5a5");
+          if (isGood(op)) beep(520 + Math.min(600, P.n), 0.09); else { beep(180, 0.15, 0.07, "sawtooth"); flash = 0.25; }
+          if (P.n <= 0) return lose("被門吃光了，選另一邊試試！");
+          if (P.n < before) shake = 0.15;
+        } else if (o.t === "saw" || o.t === "wall") {
+          let a, b;
+          if (o.t === "saw") { const c = Math.sin(T * o.w + o.ph) * (HALF - o.hw); a = c - o.hw; b = c + o.hw; }
+          else { a = o.side < 0 ? -HALF : HALF - o.len; b = o.side < 0 ? -HALF + o.len : HALF; }
+          const ov = Math.max(0, Math.min(b, P.x + R) - Math.max(a, P.x - R));
+          if (ov > 0) {
+            const k = Math.max(1, Math.ceil(P.n * (ov / (2 * R)) * 0.8));
+            P.n = Math.max(0, P.n - k); pop("−" + k, P.x, P.z + 1, "#fca5a5"); shake = 0.25; flash = 0.25; beep(140, 0.2, 0.08, "sawtooth");
+            if (P.n <= 0) return lose(o.t === "saw" ? "被刀片掃光了，看準時機再過！" : "撞牆了，記得閃開！");
+          }
+        }
+      }
+    }
+  } else {
+    if (st === "boss") P.z = Math.min(P.z + SPEED * 0.6 * dt, L.bossZ - 1.0 - R * 0.35);   // 衝上去圍住魔王
+    fightAcc += dt;
+    while (fightAcc > 0.055) {
+      fightAcc -= 0.055;
+      const foe = st === "fight" ? cur.m : L.hp;
+      const k = Math.max(1, Math.ceil(Math.min(P.n, foe) * 0.06));
+      P.n = Math.max(0, P.n - k);
+      if (st === "fight") cur.m = Math.max(0, cur.m - k); else L.hp = Math.max(0, L.hp - k);
+      const pz = st === "fight" ? cur.z - crowdR(cur.m) * 0.5 : L.bossZ - 1.6;
+      for (let i = 0; i < 3; i++) parts.push({ x: P.x + (Math.random() - 0.5) * 1.5, z: pz, y: 0.4, vx: (Math.random() - 0.5) * 3, vy: 2 + Math.random() * 3, t: 0, col: Math.random() < 0.5 ? "#60a5fa" : "#f87171" });
+      beep(300 + Math.random() * 200, 0.03, 0.025);
+      if (st === "boss" && L.hp <= 0 && P.n > 0) return win();
+      if (P.n <= 0) return lose(st === "boss" ? `魔王還剩 ${L.hp.toLocaleString()} 血，多帶點人再來！` : "被敵軍吃掉了，前面要多收點人！");
+      if (st === "fight" && cur.m <= 0) { st = "run"; cur = null; break; }
+    }
+  }
+  camZ += (P.z - CAMBACK - camZ) * Math.min(1, dt * 8);
+  document.getElementById("hBar").style.width = Math.min(100, P.z / L.bossZ * 100) + "%";
+}
+
+/* ───── 畫圖 ───── */
+function poly(pts, fill, stroke, lw = 2) {
+  if (pts.some(p => !p)) return;
+  g.beginPath(); g.moveTo(pts[0].x, pts[0].y); for (const p of pts.slice(1)) g.lineTo(p.x, p.y); g.closePath();
+  if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw; g.stroke(); }
+}
+function label(text, x, y, size, fill, bg) {
+  g.font = `900 ${size}px -apple-system,"PingFang TC","Microsoft JhengHei",sans-serif`;
+  g.textAlign = "center"; g.textBaseline = "middle";
+  if (bg) { const w = g.measureText(text).width + size * 0.9, h = size * 1.35; g.fillStyle = bg; g.beginPath(); g.roundRect ? g.roundRect(x - w / 2, y - h / 2, w, h, h / 2) : g.rect(x - w / 2, y - h / 2, w, h); g.fill(); }
+  g.lineWidth = Math.max(2, size * 0.14); g.strokeStyle = "#0009"; g.strokeText(text, x, y);
+  g.fillStyle = fill; g.fillText(text, x, y);
+}
+function man(p, body, head) {
+  const s = p.s * 0.12;
+  g.fillStyle = "#0003"; g.beginPath(); g.ellipse(p.x, p.y, s * 1.1, s * 0.45, 0, 0, 7); g.fill();
+  g.fillStyle = body; g.fillRect(p.x - s * 0.75, p.y - s * 2.6, s * 1.5, s * 2.3);
+  g.beginPath(); g.arc(p.x, p.y - s * 3.2, s * 0.78, 0, 7); g.fillStyle = head; g.fill();
+}
+function slot(i) { const r = SP * Math.sqrt(i + 0.5), a = i * 2.39996; return [r * Math.cos(a), r * Math.sin(a) * 0.8]; }
+function draw(T) {
+  g.save();
+  if (shake > 0) g.translate((Math.random() - 0.5) * 10 * shake, (Math.random() - 0.5) * 10 * shake);
+  // 天空與雪地
+  const sky = g.createLinearGradient(0, 0, 0, HOR + 40);
+  sky.addColorStop(0, "#7cb3e6"); sky.addColorStop(1, "#d7ecfb");
+  g.fillStyle = sky; g.fillRect(-20, -20, W + 40, HOR + 60);
+  g.fillStyle = "#e9f2f8"; g.fillRect(-20, HOR + 2, W + 40, H);
+  // 遠山
+  g.fillStyle = "#b7cde0"; g.beginPath(); g.moveTo(-20, HOR + 4);
+  for (let i = 0; i <= 12; i++) g.lineTo(i * W / 12, HOR - 18 - 22 * Math.abs(Math.sin(i * 1.7)));
+  g.lineTo(W + 20, HOR + 4); g.fill();
+  if (!L) { g.restore(); return; }
+  const far = camZ + 140, end = Math.min(far, L.bossZ + 6);
+  // 跑道
+  poly([proj(-HALF, camZ + 0.7), proj(HALF, camZ + 0.7), proj(HALF, end), proj(-HALF, end)], "#9aa9b8");
+  for (let z = Math.floor(camZ / 4) * 4; z < end; z += 4) if ((z / 4) % 2 === 0) poly([proj(-HALF, Math.max(z, camZ + 0.7)), proj(HALF, Math.max(z, camZ + 0.7)), proj(HALF, z + 2), proj(-HALF, z + 2)], "#a6b4c2");
+  for (const sx of [-1, 1]) poly([proj(sx * HALF, camZ + 0.7), proj(sx * (HALF + 0.25), camZ + 0.7, 0.35), proj(sx * (HALF + 0.25), end, 0.35), proj(sx * HALF, end)], "#5b6b7c");
+  // 終點地板
+  poly([proj(-HALF, L.bossZ - 3), proj(HALF, L.bossZ - 3), proj(HALF, L.bossZ + 6), proj(-HALF, L.bossZ + 6)], "#c3b8d9");
+  // 收集要畫的東西（遠的先畫）
+  const D = [];
+  for (const o of L.items) {
+    if (o.z < camZ + 0.7 || o.z > far) continue;
+    if (o.t === "gate") D.push({ z: o.z, f: () => drawGate(o) });
+    else if (o.t === "saw") D.push({ z: o.z, f: () => drawSaw(o, T) });
+    else if (o.t === "wall") D.push({ z: o.z, f: () => drawWall(o) });
+    else if (o.t === "enemy" && o.m > 0) {
+      const cnt = Math.min(o.m, CAP);
+      for (let i = 0; i < cnt; i++) { const [dx, dz] = slot(i); const z = o.z + dz + 0.3; D.push({ z, f: () => { const p = proj(dx * 1.0, z); if (p) man(p, "#dc2626", "#f3c6a5"); } }); }
+      D.push({ z: o.z - crowdR(o.m) - 0.01, f: () => { const p = proj(0, o.z, 1.35); if (p) label(o.m.toLocaleString(), p.x, p.y, Math.max(14, p.s * 0.55), "#fff", "#b91c1ccc"); } });
+    }
+  }
+  if (L.bossZ < far) D.push({ z: L.bossZ, f: () => drawBoss(T) });
+  if (st !== "lose") {
+    const cnt = Math.min(P.n, CAP), moving = st === "run";
+    for (let i = 0; i < cnt; i++) {
+      const [dx, dz] = slot(i), bob = moving ? Math.sin(T * 14 + i) * 0.04 : 0;
+      const z = P.z + dz;
+      D.push({ z, f: () => { const p = proj(P.x + dx, z, Math.abs(bob)); if (p) man(p, "#2563eb", "#f3c6a5"); } });
+    }
+    D.push({ z: P.z - crowdR(P.n) - 0.02, f: () => { const p = proj(P.x, P.z, 1.35); if (p) label(P.n.toLocaleString(), p.x, p.y, Math.max(16, p.s * 0.6), "#fff", "#1d4ed8dd"); } });
+  }
+  D.sort((a, b) => b.z - a.z); for (const d of D) d.f();
+  for (const q of parts) { const p = proj(q.x, q.z, q.y); if (p) { g.fillStyle = q.col; g.globalAlpha = 1 - q.t / 0.6; g.beginPath(); g.arc(p.x, p.y, p.s * 0.06, 0, 7); g.fill(); g.globalAlpha = 1; } }
+  for (const o of pops) { const p = proj(o.x, o.z, 2.6 + o.t * 1.5); if (p) { g.globalAlpha = Math.max(0, 1 - o.t); label(o.text, p.x, p.y, Math.max(18, p.s * 0.75), o.col); g.globalAlpha = 1; } }
+  g.restore();
+  if (flash > 0) { g.fillStyle = `rgba(220,38,38,${flash * 0.6})`; g.fillRect(0, 0, W, H); }
+}
+function drawGate(o) {
+  for (let side = 0; side < 2; side++) {
+    const x1 = side ? 0.06 : -HALF + 0.06, x2 = side ? HALF - 0.06 : -0.06, op = o.ops[side], good = isGood(op);
+    const used = o.done === side, other = o.done >= 0 && !used;
+    g.globalAlpha = other ? 0.35 : 1;
+    poly([proj(x1, o.z, 0), proj(x2, o.z, 0), proj(x2, o.z, 1.7), proj(x1, o.z, 1.7)], good ? "rgba(59,130,246,.55)" : "rgba(239,68,68,.55)", good ? "#bfdbfe" : "#fecaca", 3);
+    const p = proj((x1 + x2) / 2, o.z, 0.95);
+    if (p) label(opText(op), p.x, p.y, Math.max(14, p.s * 0.7), "#fff");
+    g.globalAlpha = 1;
+  }
+  for (const x of [-HALF, 0, HALF]) { const a = proj(x, o.z, 0), b = proj(x, o.z, 1.85); if (a && b) { g.strokeStyle = "#e5e7eb"; g.lineWidth = Math.max(2, a.s * 0.09); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); } }
+}
+function drawSaw(o, T) {
+  const c = Math.sin(T * o.w + o.ph) * (HALF - o.hw), a = c - o.hw, b = c + o.hw;
+  poly([proj(a, o.z - 0.12, 0.25), proj(b, o.z - 0.12, 0.25), proj(b, o.z + 0.12, 0.25), proj(a, o.z + 0.12, 0.25)], "#475569", "#1e293b");
+  const n = 5;
+  for (let i = 0; i <= n; i++) {
+    const x = a + (b - a) * i / n, p = proj(x, o.z, 0.45);
+    if (!p) continue;
+    g.save(); g.translate(p.x, p.y); g.rotate(T * 12 + i); g.fillStyle = "#cbd5e1"; g.strokeStyle = "#334155"; g.lineWidth = 1.5;
+    const r = p.s * 0.28; g.beginPath();
+    for (let k = 0; k < 16; k++) { const rr = k % 2 ? r * 0.55 : r; g.lineTo(Math.cos(k * Math.PI / 8) * rr, Math.sin(k * Math.PI / 8) * rr); }
+    g.closePath(); g.fill(); g.stroke(); g.restore();
+  }
+}
+function drawWall(o) {
+  const a = o.side < 0 ? -HALF : HALF - o.len, b = o.side < 0 ? -HALF + o.len : HALF;
+  poly([proj(a, o.z, 0), proj(b, o.z, 0), proj(b, o.z, 1.2), proj(a, o.z, 1.2)], "#64748b", "#1e293b");
+  poly([proj(a, o.z, 1.2), proj(b, o.z, 1.2), proj(b, o.z + 0.5, 1.2), proj(a, o.z + 0.5, 1.2)], "#94a3b8", "#1e293b");
+  const p = proj((a + b) / 2, o.z, 0.6); if (p) label("⚠", p.x, p.y, Math.max(12, p.s * 0.6), "#fde047");
+}
+function drawBoss(T) {
+  const p = proj(0, L.bossZ, 0); if (!p) return;
+  const s = p.s, hit = st === "boss" ? Math.sin(T * 30) * s * 0.03 : 0;
+  g.fillStyle = "#0004"; g.beginPath(); g.ellipse(p.x, p.y, s * 1.1, s * 0.35, 0, 0, 7); g.fill();
+  // 冰霜魔王：藍白長袍、冰角
+  g.fillStyle = "#4c1d95"; g.beginPath(); g.moveTo(p.x - s * 0.9 + hit, p.y); g.lineTo(p.x + s * 0.9 + hit, p.y); g.lineTo(p.x + s * 0.55 + hit, p.y - s * 1.9); g.lineTo(p.x - s * 0.55 + hit, p.y - s * 1.9); g.fill();
+  g.fillStyle = "#7dd3fc"; g.fillRect(p.x - s * 0.12 + hit, p.y - s * 1.9, s * 0.24, s * 1.9);
+  g.fillStyle = "#c7d2fe"; g.beginPath(); g.arc(p.x + hit, p.y - s * 2.3, s * 0.48, 0, 7); g.fill();
+  g.fillStyle = "#e0f2fe"; for (const sx of [-1, 1]) { g.beginPath(); g.moveTo(p.x + sx * s * 0.25 + hit, p.y - s * 2.65); g.lineTo(p.x + sx * s * 0.6 + hit, p.y - s * 3.25); g.lineTo(p.x + sx * s * 0.42 + hit, p.y - s * 2.55); g.fill(); }
+  g.fillStyle = "#111"; for (const sx of [-1, 1]) { g.beginPath(); g.arc(p.x + sx * s * 0.17 + hit, p.y - s * 2.35, s * 0.07, 0, 7); g.fill(); }
+  g.strokeStyle = "#111"; g.lineWidth = s * 0.05; g.beginPath(); g.moveTo(p.x - s * 0.17 + hit, p.y - s * 2.12); g.lineTo(p.x + s * 0.17 + hit, p.y - s * 2.12); g.stroke();
+  // 冰錘
+  g.strokeStyle = "#94a3b8"; g.lineWidth = s * 0.09; g.beginPath(); g.moveTo(p.x + s * 0.7 + hit, p.y - s * 0.9); g.lineTo(p.x + s * 1.05 + hit, p.y - s * 2.4); g.stroke();
+  g.fillStyle = "#bae6fd"; g.fillRect(p.x + s * 0.8 + hit, p.y - s * 2.75, s * 0.55, s * 0.4);
+  const bw = s * 1.8, frac = L.hp / L.hp0;
+  g.fillStyle = "#0008"; g.fillRect(p.x - bw / 2, p.y - s * 3.65, bw, s * 0.18);
+  g.fillStyle = "#ef4444"; g.fillRect(p.x - bw / 2, p.y - s * 3.65, bw * frac, s * 0.18);
+  label(L.hp.toLocaleString(), p.x, p.y - s * 3.95, Math.max(14, s * 0.42), "#fff");
+}
+
+/* ───── 主迴圈 ───── */
+let last = performance.now(), T = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt;
+  update(dt, T); draw(T); requestAnimationFrame(frame);
+}
+L = makeLevel(save.level); camZ = -CAMBACK; hud();
+requestAnimationFrame(frame);
+</script>
+</body></html>
