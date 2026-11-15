@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="棋盤小館"><meta name="theme-color" content="#131917"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon.png"><link rel="icon" href="icon.png"><style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style><script>if('serviceWorker' in navigator&&(location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname)))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))</script><!DOCTYPE html>
 <html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>人海衝鋒</title>
@@ -19,6 +19,7 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
 .stars{font-size:38px;letter-spacing:6px;color:#ffd34d;margin:4px 0}
 .dim{color:#4b5563}
 .hidden{display:none}
+.home{display:block;margin-top:14px;color:#93c5fd;font-size:15px;text-decoration:none}
 .tag{display:inline-block;padding:2px 8px;border-radius:8px;margin:2px;font-weight:800}
 .g{background:#2563eb}.b{background:#dc2626}
 </style></head><body>
@@ -34,6 +35,7 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
     <p>撞上紅色敵軍會互相抵消，躲開刀片和牆。<br>終點打倒魔王就過關！</p>
     <button class="btn" id="bStart">開始 第 1 關</button>
     <button class="btn alt" id="bUp1">升級</button>
+    <a class="home hidden" id="homeLink" href="./">← 回棋盤小館</a>
   </div>
   <div class="panel hidden" id="pWin">
     <h2>過關！</h2>
@@ -382,6 +384,7 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt;
   update(dt, T); draw(T); requestAnimationFrame(frame);
 }
+if (/github\.io$|^localhost$|^127\.0\.0\.1$|\.ts\.net$/.test(location.hostname)) document.getElementById("homeLink").classList.remove("hidden");
 L = makeLevel(save.level); camZ = -CAMBACK; hud();
 requestAnimationFrame(frame);
 </script>
