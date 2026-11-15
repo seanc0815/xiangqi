@@ -1,0 +1,306 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="棋盤小館"><meta name="theme-color" content="#131917"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon.png"><link rel="icon" href="icon.png"><style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style><script>if('serviceWorker' in navigator&&(location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname)))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))</script><!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>箭雨守關</title>
+<style>
+html,body{margin:0;height:100%;background:#1b2430;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;font-family:-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif}
+canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
+#ui{position:fixed;inset:0;pointer-events:none}
+.hud{position:absolute;top:10px;left:12px;right:12px;display:flex;justify-content:space-between;align-items:center;color:#fff;font-weight:800;font-size:16px;text-shadow:0 1px 3px #000a}
+.stats{position:absolute;top:38px;left:12px;right:12px;display:flex;gap:8px;color:#fff;font-weight:800;font-size:13px}
+.stats span{background:#0f172acc;padding:3px 8px;border-radius:8px}
+.bar{position:absolute;top:66px;left:12px;right:12px;height:6px;border-radius:3px;background:#ffffff30;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:#fca5a5}
+.panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(86vw,360px);background:#0f1722f2;border-radius:20px;padding:22px 20px;color:#fff;text-align:center;pointer-events:auto;box-shadow:0 12px 40px #000a}
+.panel h1{margin:0 0 4px;font-size:32px;letter-spacing:2px}
+.panel h2{margin:0 0 6px;font-size:26px}
+.panel p{margin:6px 0;color:#c9d3e0;font-size:15px;line-height:1.55}
+.btn{display:block;width:100%;margin-top:12px;padding:13px;border:0;border-radius:12px;font-size:18px;font-weight:800;background:#3b82f6;color:#fff;font-family:inherit}
+.btn.alt{background:#283548;font-size:16px}
+.stars{font-size:38px;letter-spacing:6px;color:#ffd34d;margin:4px 0}
+.dim{color:#4b5563}
+.hidden{display:none}
+.home{display:block;margin-top:14px;color:#93c5fd;font-size:15px;text-decoration:none}
+.tag{display:inline-block;padding:2px 8px;border-radius:8px;margin:2px;font-weight:800;font-size:13px}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="hud"><span id="hLv">第 1 關</span><span id="hHp">❤ 10</span></div>
+  <div class="stats"><span id="sMulti">箭 ×1</span><span id="sRate">射速 4.0</span><span id="sDmg">傷害 1</span></div>
+  <div class="bar"><i id="hBar"></i></div>
+  <div class="panel" id="pMenu">
+    <h1>箭雨守關</h1>
+    <p>左右拖曳移動，弓箭會自動往前射。<br>紅色人潮會朝你衝過來，被碰到就扣血。</p>
+    <p>兩側通道的補給箱要射爆才拿得到：<br>
+      <span class="tag" style="background:#2563eb">+1 箭</span><span class="tag" style="background:#059669">射速</span><span class="tag" style="background:#d97706">傷害</span><br>
+      去射箱子時中間會漏人，自己拿捏！</p>
+    <button class="btn" id="bStart">開始 第 1 關</button>
+    <a class="home hidden" id="homeLink" href="./">← 回棋盤小館</a>
+  </div>
+  <div class="panel hidden" id="pWin">
+    <h2>守住了！</h2>
+    <div class="stars" id="wStars">★★★</div>
+    <p id="wInfo"></p>
+    <button class="btn" id="bNext">下一關</button>
+    <button class="btn alt" id="bRetryW">重玩這關</button>
+  </div>
+  <div class="panel hidden" id="pLose">
+    <h2>城破了…</h2>
+    <p id="lInfo"></p>
+    <button class="btn" id="bRetry">再試一次</button>
+  </div>
+</div>
+<script>
+"use strict";
+/* ───── 畫布與投影（跟人海衝鋒同一套） ───── */
+const cv = document.getElementById("c"), g = cv.getContext("2d");
+let W = 0, H = 0, F = 0, HOR = 0, camZ = -16;
+const LANE = 2.3, EDGE = 3.8, CAMH = 12, CAMBACK = 16, SIDE_X = 3.12, FAR = 46;   // 鏡頭拉遠拉高：遠方的人群才看得到
+function resize() {
+  const d = Math.min(2, window.devicePixelRatio || 1);
+  W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * d); cv.height = Math.round(H * d);
+  g.setTransform(d, 0, 0, d, 0, 0);
+  const sp = Math.min(W * 0.47 / EDGE, H * 0.075);
+  F = sp * CAMBACK; HOR = H * 0.84 - CAMH * sp;
+}
+addEventListener("resize", resize); resize();
+function proj(x, z, y = 0) { const d = z - camZ; if (d < 0.6) return null; const s = F / d; return { x: W / 2 + x * s, y: HOR + (CAMH - y) * s, s }; }
+
+/* ───── 存檔、音效 ───── */
+const KEY = "arrowrain-v1", save = { level: 1 };
+try { Object.assign(save, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) { }
+const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) { } };
+let AC = null;
+function beep(f, d = 0.06, v = 0.04, type = "square") {
+  if (!AC) return;
+  try { const o = AC.createOscillator(), a = AC.createGain(); o.type = type; o.frequency.value = f; a.gain.value = v; a.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d); o.connect(a); a.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) { }
+}
+
+/* ───── 關卡設定 ───── */
+function levelCfg(n) {
+  return {
+    total: Math.min(520, 60 + 26 * n),                 // 這關一共多少敵人
+    row: Math.min(10, 3 + Math.floor(n * 0.4)),       // 一次冒出幾個（這關後段的量；開頭只有 4 成）
+    gap: Math.max(0.4, 0.72 - n * 0.015),              // 幾秒冒一排
+    speed: Math.min(3.4, 2.4 + n * 0.05),              // 走路速度
+    armored: Math.min(0.35, 0.06 + n * 0.025),         // 盔甲兵比例（3 血）
+    bossHp: 80 + 55 * n, bossSpeed: Math.min(1.8, 1.0 + n * 0.04),
+    crateGap: Math.max(3.2, 4.6 - n * 0.06),
+  };
+}
+const CRATE = {
+  multi: { label: "+1 箭", col: "#2563eb", apply: () => P.multi = Math.min(12, P.multi + 1) },
+  rate: { label: "射速", col: "#059669", apply: () => P.rate = Math.min(14, P.rate * 1.25) },
+  dmg: { label: "傷害", col: "#d97706", apply: () => P.dmg += 1 },
+};
+
+/* ───── 狀態 ───── */
+let st = "menu", C = null, P = null, foes = [], arrows = [], crates = [], parts = [], pops = [], boss = null;
+let T = 0, spawnAcc = 0, crateAcc = 0, fireAcc = 0, spawned = 0, crateN = 0, flash = 0, shake = 0, endT = 0, kills = 0;
+function startLevel() {
+  C = levelCfg(save.level);
+  P = { x: 0, hp: 10, multi: 1, rate: 4, dmg: 1 };
+  foes = []; arrows = []; crates = []; parts = []; pops = []; boss = null;
+  T = 0; spawnAcc = 0; crateAcc = C.crateGap - 0.3; fireAcc = 0; spawned = 0; crateN = 0; kills = 0;
+  st = "play"; show(null); hud();
+}
+function show(id) { for (const p of ["pMenu", "pWin", "pLose"]) document.getElementById(p).classList.toggle("hidden", p !== id); }
+function hud() {
+  document.getElementById("hLv").textContent = "第 " + save.level + " 關";
+  document.getElementById("bStart").textContent = "開始 第 " + save.level + " 關";
+  if (!P) return;
+  document.getElementById("hHp").textContent = "❤ " + Math.max(0, P.hp);
+  document.getElementById("sMulti").textContent = "箭 ×" + P.multi;
+  document.getElementById("sRate").textContent = "射速 " + P.rate.toFixed(1);
+  document.getElementById("sDmg").textContent = "傷害 " + P.dmg;
+}
+const pop = (text, x, z, col) => pops.push({ text, x, z, t: 0, col });
+
+/* ───── 操作 ───── */
+let drag = null, keyDir = 0;
+cv.addEventListener("pointerdown", e => { drag = { x: e.clientX }; });
+addEventListener("pointermove", e => { if (!drag || st !== "play") { if (drag) drag.x = e.clientX; return; } P.x += (e.clientX - drag.x) * (2 * EDGE) / (W * 0.8); drag.x = e.clientX; });
+for (const ev of ["pointerup", "pointercancel"]) addEventListener(ev, () => drag = null);
+addEventListener("keydown", e => { if (e.key === "ArrowLeft" || e.key === "a") keyDir = -1; if (e.key === "ArrowRight" || e.key === "d") keyDir = 1; });
+addEventListener("keyup", e => { if (["ArrowLeft", "ArrowRight", "a", "d"].includes(e.key)) keyDir = 0; });
+const on = (id, f) => document.getElementById(id).addEventListener("click", () => { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { } } f(); });
+on("bStart", startLevel); on("bNext", startLevel); on("bRetry", startLevel);
+on("bRetryW", () => { save.level = Math.max(1, save.level - 1); persist(); startLevel(); });
+
+/* ───── 更新 ───── */
+function lose() { st = "lose"; endT = 0; beep(110, 0.5, 0.08, "sawtooth"); document.getElementById("lInfo").textContent = boss && boss.z < 1.5 ? "魔王衝進來了！多拿點補給再來。" : `擋下了 ${kills} 個敵人，差一點！試著早點拿補給箱。`; }
+function win() {
+  st = "win"; endT = 0; beep(660, 0.12, 0.06); setTimeout(() => beep(880, 0.25, 0.06), 130);
+  const stars = P.hp >= 8 ? 3 : P.hp >= 4 ? 2 : 1;
+  document.getElementById("wStars").innerHTML = "★".repeat(stars) + `<span class="dim">${"★".repeat(3 - stars)}</span>`;
+  document.getElementById("wInfo").textContent = `擋下 ${kills} 個敵人＋魔王，城牆還剩 ${P.hp} 血`;
+  save.level++; persist(); hud();
+}
+function hitLine(dmg) { P.hp -= dmg; flash = 0.3; shake = 0.25; beep(150, 0.15, 0.06, "sawtooth"); hud(); if (P.hp <= 0) lose(); }
+function update(dt) {
+  if (flash > 0) flash -= dt; if (shake > 0) shake -= dt;
+  for (const p of pops) p.t += dt; pops = pops.filter(p => p.t < 1);
+  for (const q of parts) { q.t += dt; q.x += q.vx * dt; q.z += q.vz * dt; q.y += q.vy * dt; q.vy -= 9 * dt; } parts = parts.filter(q => q.t < 0.5);
+  if (st === "win" || st === "lose") { endT += dt; if (endT > 0.8 && endT - dt <= 0.8) show(st === "win" ? "pWin" : "pLose"); return; }
+  if (st !== "play") return;
+  T += dt;
+  P.x = Math.max(-EDGE + 0.35, Math.min(EDGE - 0.35, P.x + keyDir * 7 * dt));
+  // 冒敵人
+  spawnAcc += dt;
+  while (spawned < C.total && spawnAcc >= C.gap) {
+    spawnAcc -= C.gap;
+    const k = Math.min(Math.ceil(C.row * Math.min(1, 0.3 + 0.9 * spawned / C.total)), C.total - spawned);   // 越後面越多
+    for (let i = 0; i < k; i++) {
+      const arm = Math.random() < C.armored;
+      foes.push({ x: (Math.random() * 2 - 1) * (LANE - 0.2), z: FAR - 4 + Math.random() * 3, hp: arm ? 3 : 1, arm, sp: C.speed * (0.85 + Math.random() * 0.3), ph: Math.random() * 6 });
+    }
+    spawned += k;
+  }
+  if (spawned >= C.total && !boss && foes.length < C.row * 3) { boss = { z: FAR - 2, x: 0, hp: C.bossHp, hp0: C.bossHp }; beep(90, 0.6, 0.08, "sawtooth"); pop("魔王來了！", 0, 30, "#fca5a5"); }
+  // 補給箱（左右輪流）
+  crateAcc += dt;
+  if (crateAcc >= C.crateGap && (!boss || boss.z > 10)) {
+    crateAcc = 0; crateN++;
+    const types = ["multi", "rate", "multi", "dmg", "rate", "multi"], type = types[(crateN - 1) % types.length];
+    const hp = Math.round(6 * Math.pow(1.32, crateN - 1) * (1 + save.level * 0.03));
+    crates.push({ x: crateN % 2 ? -SIDE_X : SIDE_X, z: FAR - 2, hp, hp0: hp, type });
+  }
+  // 射箭
+  fireAcc += dt;
+  const gap = 1 / P.rate;
+  while (fireAcc >= gap) {
+    fireAcc -= gap;
+    for (let i = 0; i < P.multi; i++) arrows.push({ x: P.x + (i - (P.multi - 1) / 2) * 0.24, z: 0.9, pierce: 0 });
+    if (Math.random() < 0.35) beep(1200 + Math.random() * 300, 0.02, 0.012, "triangle");
+  }
+  for (const a of arrows) a.z += 34 * dt;
+  // 箭打到東西
+  for (const a of arrows) {
+    if (a.dead) continue;
+    if (Math.abs(a.x) > LANE + 0.1) {                 // 在旁邊通道：打補給箱
+      for (const c of crates) if (c.hp > 0 && Math.abs(a.x - c.x) < 0.65 && Math.abs(a.z - c.z) < 0.6) {
+        c.hp -= P.dmg; a.dead = true;
+        if (c.hp <= 0) { CRATE[c.type].apply(); pop(CRATE[c.type].label + "！", c.x, c.z, "#fde68a"); beep(880, 0.12, 0.06); beep(1320, 0.18, 0.04); hud(); }
+        break;
+      }
+      continue;
+    }
+    if (boss && boss.hp > 0 && Math.abs(a.x - boss.x) < 1.0 && Math.abs(a.z - boss.z) < 0.8) { boss.hp -= P.dmg; a.dead = true; continue; }
+    for (const f of foes) if (f.hp > 0 && Math.abs(a.x - f.x) < (f.arm ? 0.3 : 0.24) && Math.abs(a.z - f.z) < 0.45) {
+      f.hp -= P.dmg; a.dead = true;
+      if (f.hp <= 0) { kills++; for (let i = 0; i < 3; i++) parts.push({ x: f.x, z: f.z, y: 0.4, vx: (Math.random() - .5) * 3, vz: (Math.random() - .2) * 3, vy: 2 + Math.random() * 2, t: 0, col: f.arm ? "#7f1d1d" : "#ef4444" }); }
+      break;
+    }
+  }
+  arrows = arrows.filter(a => !a.dead && a.z < FAR + 2);
+  // 敵人往你走（會慢慢往你的位置靠）
+  const tx = Math.max(-LANE + 0.2, Math.min(LANE - 0.2, P.x));
+  for (const f of foes) {
+    if (f.hp <= 0) continue;
+    f.z -= f.sp * dt;
+    const pull = f.z < 25 ? 1.1 : 0.5;
+    f.x += Math.max(-1, Math.min(1, tx - f.x)) * pull * dt;
+    if (f.z < 0.8) { f.hp = 0; hitLine(f.arm ? 2 : 1); if (st !== "play") return; }
+  }
+  foes = foes.filter(f => f.hp > 0);
+  for (const c of crates) c.z -= 3.4 * dt;
+  crates = crates.filter(c => c.hp > 0 && c.z > 0.6);
+  if (boss) {
+    boss.z -= C.bossSpeed * dt; boss.x += Math.max(-1, Math.min(1, tx - boss.x)) * 0.3 * dt;
+    if (boss.hp <= 0) { for (let i = 0; i < 30; i++) parts.push({ x: boss.x, z: boss.z, y: 1, vx: (Math.random() - .5) * 6, vz: (Math.random() - .5) * 6, vy: 3 + Math.random() * 4, t: 0, col: "#a78bfa" }); boss = { dead: true, z: 99 }; }
+    else if (boss.z < 1.2) { P.hp = 0; hud(); return lose(); }
+  }
+  if (boss && boss.dead && !foes.length) return win();
+  document.getElementById("hBar").style.width = Math.min(100, (spawned / C.total) * 85 + (boss ? (boss.dead ? 15 : 15 * (1 - boss.hp / boss.hp0)) : 0)) + "%";
+}
+
+/* ───── 畫圖 ───── */
+function poly(pts, fill, stroke, lw = 2) {
+  if (pts.some(p => !p)) return;
+  g.beginPath(); g.moveTo(pts[0].x, pts[0].y); for (const p of pts.slice(1)) g.lineTo(p.x, p.y); g.closePath();
+  if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw; g.stroke(); }
+}
+function label(text, x, y, size, fill) {
+  g.font = `900 ${size}px -apple-system,"PingFang TC","Microsoft JhengHei",sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
+  g.lineWidth = Math.max(2, size * 0.15); g.strokeStyle = "#000a"; g.strokeText(text, x, y); g.fillStyle = fill; g.fillText(text, x, y);
+}
+function man(p, body, head, big = 1) {
+  const s = p.s * 0.19 * big;
+  g.fillStyle = "#0003"; g.beginPath(); g.ellipse(p.x, p.y, s * 1.1, s * 0.45, 0, 0, 7); g.fill();
+  g.fillStyle = body; g.fillRect(p.x - s * 0.75, p.y - s * 2.6, s * 1.5, s * 2.3);
+  g.beginPath(); g.arc(p.x, p.y - s * 3.2, s * 0.78, 0, 7); g.fillStyle = head; g.fill();
+}
+function draw() {
+  g.save();
+  if (shake > 0) g.translate((Math.random() - .5) * 12 * shake, (Math.random() - .5) * 12 * shake);
+  const sky = g.createLinearGradient(0, 0, 0, HOR + 40); sky.addColorStop(0, "#7cb3e6"); sky.addColorStop(1, "#d7ecfb");
+  g.fillStyle = sky; g.fillRect(-20, -20, W + 40, HOR + 60);
+  g.fillStyle = "#e9f2f8"; g.fillRect(-20, HOR + 2, W + 40, H);
+  g.fillStyle = "#b7cde0"; g.beginPath(); g.moveTo(-20, HOR + 4);
+  for (let i = 0; i <= 12; i++) g.lineTo(i * W / 12, HOR - 18 - 22 * Math.abs(Math.sin(i * 1.3 + 0.5)));
+  g.lineTo(W + 20, HOR + 4); g.fill();
+  const near = camZ + 0.7, far = FAR + 2;
+  poly([proj(-LANE, near), proj(LANE, near), proj(LANE, far), proj(-LANE, far)], "#9aa9b8");
+  for (let z = 0; z < far; z += 4) if ((z / 4) % 2 === 0) poly([proj(-LANE, Math.max(z, near)), proj(LANE, Math.max(z, near)), proj(LANE, z + 2), proj(-LANE, z + 2)], "#a6b4c2");
+  for (const sx of [-1, 1]) {
+    poly([proj(sx * (LANE + 0.15), near), proj(sx * EDGE, near), proj(sx * EDGE, far), proj(sx * (LANE + 0.15), far)], "#bcd6ef");
+    poly([proj(sx * LANE, near), proj(sx * (LANE + 0.15), near, 0.35), proj(sx * (LANE + 0.15), far, 0.35), proj(sx * LANE, far)], "#5b6b7c");
+  }
+  // 城牆線
+  poly([proj(-EDGE, -0.9), proj(EDGE, -0.9), proj(EDGE, -0.9, 0.3), proj(-EDGE, -0.9, 0.3)], "#475569");
+  if (!P) { g.restore(); return; }
+  const D = [];
+  for (const f of foes) D.push({ z: f.z, f: () => { const p = proj(f.x, f.z, Math.abs(Math.sin(T * 12 + f.ph)) * 0.05); if (p) man(p, f.arm ? "#7f1d1d" : "#dc2626", f.arm ? "#94a3b8" : "#f3c6a5", f.arm ? 1.25 : 1); } });
+  for (const c of crates) D.push({ z: c.z, f: () => drawCrate(c) });
+  if (boss && !boss.dead) D.push({ z: boss.z, f: drawBoss });
+  D.push({ z: 0, f: drawPlayer });
+  D.sort((a, b) => b.z - a.z); for (const d of D) d.f();
+  g.strokeStyle = "#fef3c7"; g.lineWidth = 2;
+  for (const a of arrows) { const p = proj(a.x, a.z, 0.5), q = proj(a.x, a.z - 0.6, 0.5); if (p && q) { g.lineWidth = Math.max(1.2, p.s * 0.03); g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(q.x, q.y); g.stroke(); } }
+  for (const q of parts) { const p = proj(q.x, q.z, q.y); if (p) { g.globalAlpha = 1 - q.t / 0.5; g.fillStyle = q.col; g.beginPath(); g.arc(p.x, p.y, p.s * 0.05, 0, 7); g.fill(); g.globalAlpha = 1; } }
+  for (const o of pops) { const p = proj(o.x, o.z, 2 + o.t * 1.5); if (p) { g.globalAlpha = Math.max(0, 1 - o.t); label(o.text, p.x, p.y, Math.max(18, p.s * 0.7), o.col); g.globalAlpha = 1; } }
+  g.restore();
+  if (flash > 0) { g.fillStyle = `rgba(220,38,38,${flash * 0.5})`; g.fillRect(0, 0, W, H); }
+}
+function drawCrate(c) {
+  const w = 0.55, col = CRATE[c.type].col;
+  poly([proj(c.x - w, c.z), proj(c.x + w, c.z), proj(c.x + w, c.z, 1.0), proj(c.x - w, c.z, 1.0)], col, "#0f172a", 2);
+  poly([proj(c.x - w, c.z, 1.0), proj(c.x + w, c.z, 1.0), proj(c.x + w, c.z + 0.6, 1.0), proj(c.x - w, c.z + 0.6, 1.0)], "#ffffff55", "#0f172a", 1.5);
+  const p = proj(c.x, c.z, 0.62), q = proj(c.x, c.z, 0.25);
+  if (p) label(CRATE[c.type].label, p.x, p.y, Math.max(11, p.s * 0.3), "#fff");
+  if (q) label(String(Math.max(0, c.hp)), q.x, q.y, Math.max(11, q.s * 0.3), "#fde68a");
+}
+function drawBoss() {
+  const p = proj(boss.x, boss.z); if (!p) return;
+  const s = p.s;
+  g.fillStyle = "#0004"; g.beginPath(); g.ellipse(p.x, p.y, s * 1.1, s * 0.35, 0, 0, 7); g.fill();
+  g.fillStyle = "#7f1d1d"; g.beginPath(); g.moveTo(p.x - s * 0.95, p.y); g.lineTo(p.x + s * 0.95, p.y); g.lineTo(p.x + s * 0.6, p.y - s * 2); g.lineTo(p.x - s * 0.6, p.y - s * 2); g.fill();
+  g.fillStyle = "#facc15"; g.fillRect(p.x - s * 0.6, p.y - s * 1.2, s * 1.2, s * 0.14);
+  g.fillStyle = "#f3c6a5"; g.beginPath(); g.arc(p.x, p.y - s * 2.4, s * 0.5, 0, 7); g.fill();
+  g.fillStyle = "#1f2937"; g.beginPath(); g.moveTo(p.x - s * 0.55, p.y - s * 2.55); g.lineTo(p.x, p.y - s * 3.2); g.lineTo(p.x + s * 0.55, p.y - s * 2.55); g.fill();
+  g.fillStyle = "#111"; for (const sx of [-1, 1]) { g.beginPath(); g.arc(p.x + sx * s * 0.17, p.y - s * 2.42, s * 0.07, 0, 7); g.fill(); }
+  g.strokeStyle = "#6b7280"; g.lineWidth = s * 0.1; g.beginPath(); g.moveTo(p.x + s * 0.8, p.y - s * 0.6); g.lineTo(p.x + s * 1.0, p.y - s * 2.6); g.stroke();
+  g.fillStyle = "#374151"; g.fillRect(p.x + s * 0.7, p.y - s * 3.0, s * 0.6, s * 0.5);
+  const bw = s * 1.9, fr = Math.max(0, boss.hp) / boss.hp0;
+  g.fillStyle = "#0008"; g.fillRect(p.x - bw / 2, p.y - s * 3.55, bw, s * 0.18);
+  g.fillStyle = "#ef4444"; g.fillRect(p.x - bw / 2, p.y - s * 3.55, bw * fr, s * 0.18);
+  label(String(Math.max(0, boss.hp)), p.x, p.y - s * 3.85, Math.max(14, s * 0.4), "#fff");
+}
+function drawPlayer() {
+  const p = proj(P.x, 0); if (!p) return;
+  man(p, "#2563eb", "#f3c6a5", 1.5);
+  const s = p.s * 0.18;
+  g.strokeStyle = "#78350f"; g.lineWidth = Math.max(2, s * 0.25);
+  g.beginPath(); g.arc(p.x, p.y - s * 2.6, s * 1.6, Math.PI * 1.15, Math.PI * 1.85); g.stroke();
+  g.strokeStyle = "#e5e7eb"; g.lineWidth = 1; g.beginPath(); g.moveTo(p.x - s * 1.3, p.y - s * 3.5); g.lineTo(p.x + s * 1.3, p.y - s * 3.5); g.stroke();
+}
+
+/* ───── 主迴圈 ───── */
+let last = performance.now();
+function frame(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; update(dt); draw(); requestAnimationFrame(frame); }
+if (/github\.io$|^localhost$|^127\.0\.0\.1$|\.ts\.net$/.test(location.hostname)) document.getElementById("homeLink").classList.remove("hidden");
+hud(); P = { x: 0, hp: 10, multi: 1, rate: 4, dmg: 1 }; hud();
+requestAnimationFrame(frame);
+</script>
+</body></html>
